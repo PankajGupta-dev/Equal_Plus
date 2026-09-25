@@ -12,7 +12,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
 class LiveAiCallViewModel(
-    private val voipGatewayClient: VoipGatewayClient = VoipGatewayClientImpl()
+    private val voipGatewayClient: VoipGatewayClient = VoipGatewayClientImpl(),
+    private val elevenLabsManager: com.example.equal_plus.telephony.ElevenLabsConversationManager = com.example.equal_plus.telephony.ElevenLabsConversationManager()
 ) : ViewModel() {
 
     private val _liveCallState = MutableStateFlow(
@@ -23,6 +24,7 @@ class LiveAiCallViewModel(
     val liveCallState: StateFlow<LiveCallState> = _liveCallState.asStateFlow()
 
     val connectionState: StateFlow<VoipConnectionState> = voipGatewayClient.connectionState
+    val elevenLabsSessionState: StateFlow<com.example.equal_plus.telephony.ElevenLabsSessionState> = elevenLabsManager.sessionState
 
     init {
         observeVoipClient()
@@ -129,8 +131,70 @@ class LiveAiCallViewModel(
         endCall()
     }
 
+    /**
+     * Synthesize and speak an AI response using the configured ElevenLabs voice model,
+     * transmitting synthesized audio into the live VoIP call stream.
+     */
+    fun speakAiResponse(text: String, voiceId: String = com.example.equal_plus.data.network.ElevenLabsConfig.DEFAULT_VOICE_ID) {
+        viewModelScope.launch {
+            _liveCallState.value = _liveCallState.value.copy(
+                aiStatusText = "ElevenLabs AI speaking response..."
+            )
+            val result = elevenLabsManager.synthesizeSpeech(
+                text = text,
+                voiceId = voiceId
+            ) { audioChunk ->
+                // Send synthesized audio directly through the VoIP audio gateway
+                voipGatewayClient.sendAudio(audioChunk)
+            }
+            if (result.isSuccess) {
+                val current = _liveCallState.value
+                val newTranscript = if (current.latestTranscript.isBlank()) {
+                    "AI Assistant: $text"
+                } else {
+                    "${current.latestTranscript}\n\nAI Assistant: $text"
+                }
+                _liveCallState.value = current.copy(
+                    latestTranscript = newTranscript,
+                    aiStatusText = "AI Assistant actively screening caller..."
+                )
+            } else {
+                _liveCallState.value = _liveCallState.value.copy(
+                    aiStatusText = "AI screening caller (Voice fallback: ${result.exceptionOrNull()?.localizedMessage})"
+                )
+            }
+        }
+    }
+
+    /**
+     * Connects directly to ElevenLabs Conversational AI WebSocket agent for full-duplex conversational call screening.
+     */
+    fun startElevenLabsConversation(agentId: String) {
+        elevenLabsManager.startConversationalSession(agentId)
+        viewModelScope.launch {
+            elevenLabsManager.conversationEvents.collect { event ->
+                when (event.type) {
+                    "message" -> {
+                        event.text?.let { msg ->
+                            val current = _liveCallState.value
+                            _liveCallState.value = current.copy(
+                                latestTranscript = if (current.latestTranscript.isBlank()) msg else "${current.latestTranscript}\n\n$msg"
+                            )
+                        }
+                    }
+                    "audio_chunk" -> {
+                        event.audioBytes?.let { audio ->
+                            voipGatewayClient.sendAudio(audio)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     override fun onCleared() {
         super.onCleared()
+        elevenLabsManager.closeSession()
         voipGatewayClient.disconnect()
     }
 }

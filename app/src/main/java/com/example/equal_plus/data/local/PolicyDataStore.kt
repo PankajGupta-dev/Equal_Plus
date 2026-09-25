@@ -27,6 +27,7 @@ class PolicyDataStore(private val context: Context) : AuthTokenProvider {
 
     companion object {
         val KEY_AUTH_TOKEN = stringPreferencesKey("key_auth_bearer_token")
+        val KEY_ELEVENLABS_API_KEY = stringPreferencesKey("key_elevenlabs_api_key")
         val KEY_GLOBAL_SCREENING_ENABLED = booleanPreferencesKey("key_global_screening_enabled")
         val KEY_GLOBAL_AUTO_BLOCK_SCAM = booleanPreferencesKey("key_global_auto_block_scam")
         val KEY_GLOBAL_DEFAULT_RISK_THRESHOLD = stringPreferencesKey("key_global_default_risk_threshold")
@@ -81,6 +82,27 @@ class PolicyDataStore(private val context: Context) : AuthTokenProvider {
             .catch { emit(emptyPreferences()) }
             .map { it[KEY_AUTH_TOKEN] }
             .firstOrNull()
+    }
+
+    val elevenLabsApiKey: Flow<String> = dataStore.data
+        .catch { exception ->
+            if (exception is IOException) emit(emptyPreferences()) else throw exception
+        }
+        .map { preferences ->
+            preferences[KEY_ELEVENLABS_API_KEY] ?: com.example.equal_plus.data.network.ElevenLabsConfig.API_KEY
+        }
+
+    suspend fun getElevenLabsApiKey(): String {
+        return dataStore.data
+            .catch { emit(emptyPreferences()) }
+            .map { it[KEY_ELEVENLABS_API_KEY] }
+            .firstOrNull() ?: com.example.equal_plus.data.network.ElevenLabsConfig.API_KEY
+    }
+
+    suspend fun setElevenLabsApiKey(key: String) {
+        dataStore.edit { preferences ->
+            preferences[KEY_ELEVENLABS_API_KEY] = key
+        }
     }
 
     val isGlobalScreeningEnabled: Flow<Boolean> = dataStore.data
