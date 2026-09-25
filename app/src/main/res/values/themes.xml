@@ -1,0 +1,6 @@
+<resources>
+
+    <style name="Theme.BridgeFy" parent="Theme.MaterialComponents.Light.NoActionBar">
+    </style>
+
+</resources>
