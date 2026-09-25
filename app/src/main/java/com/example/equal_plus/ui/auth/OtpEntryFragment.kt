@@ -10,8 +10,8 @@ import androidx.fragment.app.viewModels
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
+import androidx.navigation.NavOptions
 import androidx.navigation.fragment.findNavController
-import androidx.navigation.fragment.navArgs
 import com.example.equal_plus.R
 import com.example.equal_plus.databinding.FragmentOtpEntryBinding
 import com.example.equal_plus.ui.common.AppViewModelFactory
@@ -19,6 +19,7 @@ import kotlinx.coroutines.launch
 
 /**
  * Step 2 of onboarding: user enters the SMS OTP.
+ * Phone number received via requireArguments().getString("phoneNumber").
  * On verified success, sets is_verified=true in DataStore and navigates to HomeFragment.
  */
 class OtpEntryFragment : Fragment() {
@@ -26,7 +27,9 @@ class OtpEntryFragment : Fragment() {
     private var _binding: FragmentOtpEntryBinding? = null
     private val binding get() = _binding!!
 
-    private val args: OtpEntryFragmentArgs by navArgs()
+    // Read phone passed from PhoneVerificationFragment via Bundle (no Safe Args needed)
+    private val phoneNumber: String
+        get() = requireArguments().getString("phoneNumber", "")
 
     private val viewModel: OtpEntryViewModel by viewModels {
         AppViewModelFactory(requireContext().applicationContext)
@@ -59,7 +62,7 @@ class OtpEntryFragment : Fragment() {
 
     private fun submitOtp() {
         val code = binding.etOtp.text?.toString()?.trim() ?: ""
-        viewModel.verifyOtp(phoneNumber = args.phoneNumber, code = code)
+        viewModel.verifyOtp(phoneNumber = phoneNumber, code = code)
     }
 
     private fun observeState() {
@@ -83,7 +86,7 @@ class OtpEntryFragment : Fragment() {
                         findNavController().navigate(
                             R.id.action_otpEntryFragment_to_homeFragment,
                             null,
-                            androidx.navigation.NavOptions.Builder()
+                            NavOptions.Builder()
                                 .setPopUpTo(R.id.nav_graph, inclusive = true)
                                 .build()
                         )

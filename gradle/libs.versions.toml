@@ -16,12 +16,9 @@ navigation = "2.8.8"
 lifecycle = "2.8.7"
 coroutines = "1.9.0"
 ksp = "2.3.12"
-<<<<<<< Updated upstream
 kotlin = "2.2.10"
 composeBom = "2024.10.01"
-=======
 auth0 = "2.10.2"
->>>>>>> Stashed changes
 
 [libraries]
 kotlinx-coroutines-test = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-test", version.ref = "coroutines" }
@@ -71,6 +68,3 @@ auth0 = { group = "com.auth0.android", name = "auth0", version.ref = "auth0" }
 android-application = { id = "com.android.application", version.ref = "agp" }
 ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }
 compose-compiler = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
-
-
-
