@@ -15,6 +15,7 @@ import androidx.navigation.fragment.findNavController
 import com.example.equal_plus.R
 import com.example.equal_plus.data.model.RiskLevel
 import com.example.equal_plus.databinding.FragmentLiveAiCallBinding
+import com.example.equal_plus.telephony.VoipConnectionState
 import com.example.equal_plus.ui.livecall.LiveAiCallViewModel
 import com.example.equal_plus.ui.livecall.LiveCallState
 import com.example.equal_plus.ui.livecall.LiveCallStatus
@@ -82,6 +83,27 @@ class LiveAiCallFragment : Fragment() {
         binding.tvDetectedPurpose.text = state.detectedPurpose
         binding.tvAiStatusText.text = state.aiStatusText
         binding.tvLiveTranscript.text = state.latestTranscript
+
+        when (state.connectionState) {
+            is VoipConnectionState.Connecting -> {
+                binding.tvLiveSessionStatus.text = "CONNECTING VOIP GATEWAY..."
+            }
+            is VoipConnectionState.Connected -> {
+                binding.tvLiveSessionStatus.text = "VOIP CONNECTED - SCREENING"
+            }
+            is VoipConnectionState.Streaming -> {
+                binding.tvLiveSessionStatus.text = "LIVE AUDIO STREAMING ACTIVE"
+            }
+            is VoipConnectionState.CallEnded -> {
+                binding.tvLiveSessionStatus.text = "VOIP SESSION ENDED"
+            }
+            is VoipConnectionState.Disconnected -> {
+                binding.tvLiveSessionStatus.text = "VOIP DISCONNECTED"
+            }
+            is VoipConnectionState.Error -> {
+                binding.tvLiveSessionStatus.text = "VOIP ERROR: ${(state.connectionState as VoipConnectionState.Error).message}"
+            }
+        }
 
         when (state.riskLevel) {
             RiskLevel.SAFE, RiskLevel.LOW -> {

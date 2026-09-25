@@ -2,6 +2,8 @@ package com.example.equal_plus.data.repository
 
 import com.example.equal_plus.data.local.dao.ConversationDao
 import com.example.equal_plus.data.local.entity.ConversationEntity
+import com.example.equal_plus.data.network.ApiService
+import com.example.equal_plus.data.network.model.ConversationDto
 import kotlinx.coroutines.flow.Flow
 
 interface ConversationRepository {
@@ -13,10 +15,15 @@ interface ConversationRepository {
     suspend fun updateConversation(conversation: ConversationEntity): Int
     suspend fun deleteConversation(conversation: ConversationEntity): Int
     suspend fun deleteConversationsForCall(callId: String): Int
+
+    // Network-then-cache integration
+    suspend fun syncConversationsForCall(callId: String): Result<List<ConversationEntity>> = Result.success(emptyList())
+    suspend fun uploadConversationTurn(conversation: ConversationEntity): Result<ConversationEntity> = Result.success(conversation)
 }
 
 class ConversationRepositoryImpl(
-    private val conversationDao: ConversationDao
+    private val conversationDao: ConversationDao,
+    private val apiService: ApiService? = null
 ) : ConversationRepository {
 
     override fun getConversationsForCall(callId: String): Flow<List<ConversationEntity>> =
@@ -42,4 +49,40 @@ class ConversationRepositoryImpl(
 
     override suspend fun deleteConversationsForCall(callId: String): Int =
         conversationDao.deleteConversationsForCall(callId)
+
+    override suspend fun syncConversationsForCall(callId: String): Result<List<ConversationEntity>> {
+        val service = apiService ?: return Result.failure(IllegalStateException("ApiService not configured"))
+        return try {
+            val response = service.getConversationsForCall(callId)
+            if (response.isSuccessful && response.body() != null) {
+                val remoteEntities = response.body()!!.map { it.toEntity() }
+                if (remoteEntities.isNotEmpty()) {
+                    conversationDao.insertConversations(remoteEntities)
+                }
+                Result.success(remoteEntities)
+            } else {
+                Result.failure(Exception("HTTP error ${response.code()}: ${response.message()}"))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    override suspend fun uploadConversationTurn(conversation: ConversationEntity): Result<ConversationEntity> {
+        val service = apiService ?: return Result.failure(IllegalStateException("ApiService not configured"))
+        return try {
+            val dto = ConversationDto.fromEntity(conversation)
+            val response = service.createConversationTurn(dto)
+            if (response.isSuccessful && response.body() != null) {
+                val savedEntity = response.body()!!.toEntity()
+                conversationDao.insertConversation(savedEntity)
+                Result.success(savedEntity)
+            } else {
+                Result.failure(Exception("HTTP error ${response.code()}: ${response.message()}"))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
 }
+

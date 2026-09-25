@@ -4,6 +4,8 @@ import com.example.equal_plus.data.local.dao.CallDao
 import com.example.equal_plus.data.local.entity.CallEntity
 import com.example.equal_plus.data.model.CallStatus
 import com.example.equal_plus.data.model.RiskLevel
+import com.example.equal_plus.data.network.ApiService
+import com.example.equal_plus.data.network.model.CallDto
 import kotlinx.coroutines.flow.Flow
 
 interface CallRepository {
@@ -20,10 +22,16 @@ interface CallRepository {
     suspend fun deleteCall(call: CallEntity): Int
     suspend fun deleteCallById(id: String): Int
     suspend fun clearAllCalls(): Int
+
+    // Network-then-cache integration
+    suspend fun syncCallsFromBackend(): Result<List<CallEntity>> = Result.success(emptyList())
+    suspend fun fetchAndCacheCallById(id: String): Result<CallEntity?> = Result.success(null)
+    suspend fun uploadCall(call: CallEntity): Result<CallEntity> = Result.success(call)
 }
 
 class CallRepositoryImpl(
-    private val callDao: CallDao
+    private val callDao: CallDao,
+    private val apiService: ApiService? = null
 ) : CallRepository {
 
     override fun getAllCalls(): Flow<List<CallEntity>> = callDao.getAllCalls()
@@ -54,4 +62,56 @@ class CallRepositoryImpl(
     override suspend fun deleteCallById(id: String): Int = callDao.deleteCallById(id)
 
     override suspend fun clearAllCalls(): Int = callDao.clearAllCalls()
+
+    override suspend fun syncCallsFromBackend(): Result<List<CallEntity>> {
+        val service = apiService ?: return Result.failure(IllegalStateException("ApiService not configured"))
+        return try {
+            val response = service.getCalls()
+            if (response.isSuccessful && response.body() != null) {
+                val remoteCalls = response.body()!!.map { it.toEntity() }
+                if (remoteCalls.isNotEmpty()) {
+                    callDao.insertCalls(remoteCalls)
+                }
+                Result.success(remoteCalls)
+            } else {
+                Result.failure(Exception("HTTP error ${response.code()}: ${response.message()}"))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    override suspend fun fetchAndCacheCallById(id: String): Result<CallEntity?> {
+        val service = apiService ?: return Result.failure(IllegalStateException("ApiService not configured"))
+        return try {
+            val response = service.getCallById(id)
+            if (response.isSuccessful && response.body() != null) {
+                val remoteCall = response.body()!!.toEntity()
+                callDao.insertCall(remoteCall)
+                Result.success(remoteCall)
+            } else {
+                Result.failure(Exception("HTTP error ${response.code()}: ${response.message()}"))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    override suspend fun uploadCall(call: CallEntity): Result<CallEntity> {
+        val service = apiService ?: return Result.failure(IllegalStateException("ApiService not configured"))
+        return try {
+            val dto = CallDto.fromEntity(call)
+            val response = service.createCall(dto)
+            if (response.isSuccessful && response.body() != null) {
+                val savedEntity = response.body()!!.toEntity()
+                callDao.insertCall(savedEntity)
+                Result.success(savedEntity)
+            } else {
+                Result.failure(Exception("HTTP error ${response.code()}: ${response.message()}"))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
 }
+

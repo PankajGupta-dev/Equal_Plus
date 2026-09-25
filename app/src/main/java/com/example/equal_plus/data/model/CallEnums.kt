@@ -37,6 +37,7 @@ enum class SpeakerType {
 
 enum class ActionType {
     BLOCK_NUMBER,
+    BLOCK_CALL,
     ANSWER_CALL,
     END_CALL,
     RECORD_AUDIO,
@@ -44,7 +45,18 @@ enum class ActionType {
     SCREEN_CALL,
     SEND_SMS,
     NOTIFY_USER,
-    ALLOW_CALL
+    ALLOW_CALL,
+    CREATE_REMINDER,
+    CREATE_CALENDAR_EVENT,
+    SAVE_DELIVERY_INSTRUCTION,
+    REQUEST_CALLBACK
+}
+
+enum class NextAction {
+    ASK,
+    RESOLVE,
+    TERMINATE,
+    ESCALATE
 }
 
 enum class ActionStatus {

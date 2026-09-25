@@ -12,18 +12,21 @@ import androidx.datastore.preferences.preferencesDataStore
 import com.example.equal_plus.data.model.CategoryPolicy
 import com.example.equal_plus.data.model.PolicyCategory
 import com.example.equal_plus.data.model.RiskLevel
+import com.example.equal_plus.data.network.AuthTokenProvider
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.map
 import java.io.IOException
 
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "equal_plus_policy_settings")
 
-class PolicyDataStore(private val context: Context) {
+class PolicyDataStore(private val context: Context) : AuthTokenProvider {
 
     private val dataStore = context.dataStore
 
     companion object {
+        val KEY_AUTH_TOKEN = stringPreferencesKey("key_auth_bearer_token")
         val KEY_GLOBAL_SCREENING_ENABLED = booleanPreferencesKey("key_global_screening_enabled")
         val KEY_GLOBAL_AUTO_BLOCK_SCAM = booleanPreferencesKey("key_global_auto_block_scam")
         val KEY_GLOBAL_DEFAULT_RISK_THRESHOLD = stringPreferencesKey("key_global_default_risk_threshold")
@@ -51,6 +54,33 @@ class PolicyDataStore(private val context: Context) {
 
         private fun blockedNumbersKey(category: PolicyCategory) =
             stringSetPreferencesKey("policy_${category.name.lowercase()}_blocked_numbers")
+    }
+
+    val authToken: Flow<String?> = dataStore.data
+        .catch { exception ->
+            if (exception is IOException) emit(emptyPreferences()) else throw exception
+        }
+        .map { preferences ->
+            preferences[KEY_AUTH_TOKEN]
+        }
+
+    suspend fun setAuthToken(token: String) {
+        dataStore.edit { preferences ->
+            preferences[KEY_AUTH_TOKEN] = token
+        }
+    }
+
+    suspend fun clearAuthToken() {
+        dataStore.edit { preferences ->
+            preferences.remove(KEY_AUTH_TOKEN)
+        }
+    }
+
+    override suspend fun getAuthToken(): String? {
+        return dataStore.data
+            .catch { emit(emptyPreferences()) }
+            .map { it[KEY_AUTH_TOKEN] }
+            .firstOrNull()
     }
 
     val isGlobalScreeningEnabled: Flow<Boolean> = dataStore.data

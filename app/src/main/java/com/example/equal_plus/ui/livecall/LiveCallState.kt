@@ -1,6 +1,7 @@
 package com.example.equal_plus.ui.livecall
 
 import com.example.equal_plus.data.model.RiskLevel
+import com.example.equal_plus.telephony.VoipConnectionState
 
 enum class LiveCallStatus {
     SCREENING,
@@ -18,5 +19,6 @@ data class LiveCallState(
     val aiStatusText: String = "AI Assistant challenging caller authority and requesting badge identification...",
     val latestTranscript: String = "Caller: 'You have unpaid federal back taxes. Immediate payment is required to avoid arrest.'\nAI: 'Please provide your IRS employee badge identification and case file number for verification.'",
     val category: String = "Financial Scam / Impersonation",
-    val status: LiveCallStatus = LiveCallStatus.SCREENING
+    val status: LiveCallStatus = LiveCallStatus.SCREENING,
+    val connectionState: VoipConnectionState = VoipConnectionState.Streaming
 )
