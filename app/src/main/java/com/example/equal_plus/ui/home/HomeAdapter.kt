@@ -61,29 +61,8 @@ class HomeAdapter(
                 binding.tvSummary.visibility = View.GONE
             }
 
-            // Risk badge setup
-            when (call.riskLevel) {
-                RiskLevel.SAFE, RiskLevel.LOW -> {
-                    binding.tvRiskBadge.text = "SAFE"
-                    binding.tvRiskBadge.setBackgroundColor(Color.parseColor("#E8F5E9"))
-                    binding.tvRiskBadge.setTextColor(Color.parseColor("#2E7D32"))
-                }
-                RiskLevel.MEDIUM -> {
-                    binding.tvRiskBadge.text = "SUSPICIOUS"
-                    binding.tvRiskBadge.setBackgroundColor(Color.parseColor("#FFF3E0"))
-                    binding.tvRiskBadge.setTextColor(Color.parseColor("#E65100"))
-                }
-                RiskLevel.HIGH, RiskLevel.CRITICAL -> {
-                    binding.tvRiskBadge.text = if (call.riskLevel == RiskLevel.CRITICAL) "CRITICAL SCAM" else "HIGH RISK"
-                    binding.tvRiskBadge.setBackgroundColor(Color.parseColor("#FFEBEE"))
-                    binding.tvRiskBadge.setTextColor(Color.parseColor("#C62828"))
-                }
-                RiskLevel.UNKNOWN -> {
-                    binding.tvRiskBadge.text = "UNVERIFIED"
-                    binding.tvRiskBadge.setBackgroundColor(Color.parseColor("#F5F5F5"))
-                    binding.tvRiskBadge.setTextColor(Color.parseColor("#616161"))
-                }
-            }
+            // Risk badge setup via shared RiskBadgeUtil
+            com.example.equal_plus.ui.common.RiskBadgeUtil.applyRiskBadge(binding.tvRiskBadge, call.riskLevel)
 
             // Status badge setup
             when (call.status) {

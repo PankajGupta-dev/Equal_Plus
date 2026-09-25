@@ -99,7 +99,12 @@ class HomeFragment : Fragment() {
                     binding.tvBlockedCount.text = state.blockedCount.toString()
                     binding.tvAttentionCount.text = state.needingAttentionCount.toString()
 
-                    if (state.recentCalls.isEmpty()) {
+                    binding.progressBarHome.visibility = if (state.isLoading) View.VISIBLE else View.GONE
+
+                    if (state.isLoading) {
+                        binding.layoutEmptyState.visibility = View.GONE
+                        binding.rvRecentCalls.visibility = View.GONE
+                    } else if (state.recentCalls.isEmpty()) {
                         binding.layoutEmptyState.visibility = View.VISIBLE
                         binding.rvRecentCalls.visibility = View.GONE
                     } else {

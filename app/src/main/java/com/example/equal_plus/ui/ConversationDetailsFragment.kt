@@ -89,6 +89,8 @@ class ConversationDetailsFragment : Fragment() {
         viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
                 viewModel.uiState.collect { state ->
+                    binding.progressBarDetails.visibility = if (state.isLoading) View.VISIBLE else View.GONE
+
                     state.call?.let { renderCallHeader(it) }
 
                     // Render Transcript
@@ -125,29 +127,8 @@ class ConversationDetailsFragment : Fragment() {
         binding.tvPhoneNumber.text = if (call.contactName != null) call.phoneNumber else "Unknown Number"
         binding.tvCallMeta.text = "${call.callType.name} • ${dateFormat.format(Date(call.createdAt))} • Duration: $durationStr"
 
-        // Risk badge
-        when (call.riskLevel) {
-            RiskLevel.SAFE, RiskLevel.LOW -> {
-                binding.tvRiskBadge.text = "SAFE CALLER"
-                binding.tvRiskBadge.setBackgroundColor(Color.parseColor("#E8F5E9"))
-                binding.tvRiskBadge.setTextColor(Color.parseColor("#2E7D32"))
-            }
-            RiskLevel.MEDIUM -> {
-                binding.tvRiskBadge.text = "SUSPICIOUS"
-                binding.tvRiskBadge.setBackgroundColor(Color.parseColor("#FFF3E0"))
-                binding.tvRiskBadge.setTextColor(Color.parseColor("#E65100"))
-            }
-            RiskLevel.HIGH, RiskLevel.CRITICAL -> {
-                binding.tvRiskBadge.text = if (call.riskLevel == RiskLevel.CRITICAL) "CRITICAL SCAM" else "HIGH RISK SCAM"
-                binding.tvRiskBadge.setBackgroundColor(Color.parseColor("#FFEBEE"))
-                binding.tvRiskBadge.setTextColor(Color.parseColor("#C62828"))
-            }
-            RiskLevel.UNKNOWN -> {
-                binding.tvRiskBadge.text = "UNVERIFIED"
-                binding.tvRiskBadge.setBackgroundColor(Color.parseColor("#F5F5F5"))
-                binding.tvRiskBadge.setTextColor(Color.parseColor("#616161"))
-            }
-        }
+        // Shared risk badge styling
+        com.example.equal_plus.ui.common.RiskBadgeUtil.applyRiskBadge(binding.tvRiskBadge, call.riskLevel)
 
         // Status badge
         when (call.status) {

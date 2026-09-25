@@ -97,8 +97,12 @@ class CallHistoryFragment : Fragment() {
                     }
 
                     binding.tvFilteredCount.text = "Showing ${state.filteredCalls.size} $filterLabel"
+                    binding.progressBarHistory.visibility = if (state.isLoading) View.VISIBLE else View.GONE
 
-                    if (state.filteredCalls.isEmpty()) {
+                    if (state.isLoading) {
+                        binding.layoutEmptyHistory.visibility = View.GONE
+                        binding.rvCallHistory.visibility = View.GONE
+                    } else if (state.filteredCalls.isEmpty()) {
                         binding.layoutEmptyHistory.visibility = View.VISIBLE
                         binding.rvCallHistory.visibility = View.GONE
                         binding.tvEmptySubtitle.text = "No calls match the \"$filterLabel\" filter."

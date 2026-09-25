@@ -143,6 +143,9 @@ class AiPolicyFragment : Fragment() {
     }
 
     private fun renderUi(state: AiPolicyUiState) {
+        binding.progressBarPolicy.visibility = if (state.isLoading) View.VISIBLE else View.GONE
+        if (state.isLoading) return
+
         isUpdatingUi = true
         try {
             binding.switchMasterScreening.isChecked = state.isGlobalScreeningEnabled

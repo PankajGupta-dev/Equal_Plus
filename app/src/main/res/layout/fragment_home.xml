@@ -326,6 +326,16 @@
                     app:icon="@drawable/ic_call" />
             </LinearLayout>
 
+            <!-- Loading Progress Bar -->
+            <ProgressBar
+                android:id="@+id/progressBarHome"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center"
+                android:layout_marginVertical="24dp"
+                android:visibility="gone"
+                tools:visibility="visible" />
+
             <!-- Recent Calls RecyclerView -->
             <androidx.recyclerview.widget.RecyclerView
                 android:id="@+id/rvRecentCalls"

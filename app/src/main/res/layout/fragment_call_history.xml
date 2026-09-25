@@ -94,6 +94,16 @@
             </com.google.android.material.chip.ChipGroup>
         </HorizontalScrollView>
 
+        <!-- Loading Progress Bar -->
+        <ProgressBar
+            android:id="@+id/progressBarHistory"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:layout_marginVertical="32dp"
+            android:visibility="gone"
+            tools:visibility="visible" />
+
         <!-- Empty State View -->
         <LinearLayout
             android:id="@+id/layoutEmptyHistory"
