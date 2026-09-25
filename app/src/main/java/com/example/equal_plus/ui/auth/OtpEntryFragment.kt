@@ -1,6 +1,7 @@
 package com.example.equal_plus.ui.auth
 
 import android.os.Bundle
+import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -15,19 +16,21 @@ import androidx.navigation.fragment.findNavController
 import com.example.equal_plus.R
 import com.example.equal_plus.databinding.FragmentOtpEntryBinding
 import com.example.equal_plus.ui.common.AppViewModelFactory
+import com.google.android.material.snackbar.Snackbar
 import kotlinx.coroutines.launch
 
+private const val TAG = "OtpEntryFrag"
+
 /**
- * Step 2 of onboarding: user enters the SMS OTP.
+ * Step 2 of onboarding: user enters the 6-digit SMS OTP.
  * Phone number received via requireArguments().getString("phoneNumber").
- * On verified success, sets is_verified=true in DataStore and navigates to HomeFragment.
+ * On verified success → navigates to HomeFragment clearing the auth back-stack.
  */
 class OtpEntryFragment : Fragment() {
 
     private var _binding: FragmentOtpEntryBinding? = null
     private val binding get() = _binding!!
 
-    // Read phone passed from PhoneVerificationFragment via Bundle (no Safe Args needed)
     private val phoneNumber: String
         get() = requireArguments().getString("phoneNumber", "")
 
@@ -44,8 +47,11 @@ class OtpEntryFragment : Fragment() {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
+        // Show the number we're verifying so user can confirm
+        binding.tvOtpSubtitle.text = "We sent a 6-digit code to $phoneNumber"
         setupListeners()
         observeState()
+        observeEvents()
     }
 
     private fun setupListeners() {
@@ -54,7 +60,6 @@ class OtpEntryFragment : Fragment() {
             if (actionId == EditorInfo.IME_ACTION_DONE) { submitOtp(); true }
             else false
         }
-        // Resend: pop back to PhoneVerificationFragment
         binding.tvResendHint.setOnClickListener {
             findNavController().popBackStack()
         }
@@ -62,6 +67,7 @@ class OtpEntryFragment : Fragment() {
 
     private fun submitOtp() {
         val code = binding.etOtp.text?.toString()?.trim() ?: ""
+        Log.d(TAG, "Verify tapped — phone=$phoneNumber code=$code")
         viewModel.verifyOtp(phoneNumber = phoneNumber, code = code)
     }
 
@@ -72,24 +78,32 @@ class OtpEntryFragment : Fragment() {
                     binding.progressBarOtp.visibility =
                         if (state.isLoading) View.VISIBLE else View.GONE
                     binding.btnVerify.isEnabled = !state.isLoading
+                }
+            }
+        }
+    }
 
-                    if (state.error != null) {
-                        binding.tvOtpError.visibility = View.VISIBLE
-                        binding.tvOtpError.text = state.error
-                        viewModel.clearError()
-                    } else {
-                        binding.tvOtpError.visibility = View.GONE
-                    }
-
-                    if (state.isVerified) {
-                        // Navigate to Home, clearing the entire auth back-stack
-                        findNavController().navigate(
-                            R.id.action_otpEntryFragment_to_homeFragment,
-                            null,
-                            NavOptions.Builder()
-                                .setPopUpTo(R.id.nav_graph, inclusive = true)
-                                .build()
-                        )
+    private fun observeEvents() {
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                viewModel.events.collect { event ->
+                    when (event) {
+                        is OtpEntryEvent.Error -> {
+                            Log.e(TAG, "Auth0 OTP error in UI: ${event.message}")
+                            Snackbar.make(binding.root, event.message, Snackbar.LENGTH_LONG)
+                                .setAction("OK") {}
+                                .show()
+                        }
+                        OtpEntryEvent.Verified -> {
+                            Log.d(TAG, "Verified — navigating to Home")
+                            findNavController().navigate(
+                                R.id.action_otpEntryFragment_to_homeFragment,
+                                null,
+                                NavOptions.Builder()
+                                    .setPopUpTo(R.id.nav_graph, inclusive = true)
+                                    .build()
+                            )
+                        }
                     }
                 }
             }

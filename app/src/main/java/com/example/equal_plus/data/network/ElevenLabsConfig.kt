@@ -4,7 +4,7 @@ package com.example.equal_plus.data.network
  * Configuration and credentials for ElevenLabs Conversational AI and Text-to-Speech APIs.
  */
 object ElevenLabsConfig {
-    const val API_KEY = "sk_14a6926cabe2b9e1e69aa41c1440dbb02b6a63c05da3851c"
+    const val API_KEY = "6e620dde576a3dae5b4d3c78aa17c934faf159cedf6c93173fbc01df4d51a278"
 
     const val BASE_URL = "https://api.elevenlabs.io/"
     const val HEADER_API_KEY = "xi-api-key"
