@@ -28,6 +28,8 @@ class PolicyDataStore(private val context: Context) : AuthTokenProvider {
     companion object {
         val KEY_AUTH_TOKEN = stringPreferencesKey("key_auth_bearer_token")
         val KEY_ELEVENLABS_API_KEY = stringPreferencesKey("key_elevenlabs_api_key")
+        val KEY_USER_VERIFIED_NUMBER = stringPreferencesKey("user_verified_number")
+        val KEY_ONBOARDING_COMPLETE = booleanPreferencesKey("onboarding_complete")
         val KEY_GLOBAL_SCREENING_ENABLED = booleanPreferencesKey("key_global_screening_enabled")
         val KEY_GLOBAL_AUTO_BLOCK_SCAM = booleanPreferencesKey("key_global_auto_block_scam")
         val KEY_GLOBAL_DEFAULT_RISK_THRESHOLD = stringPreferencesKey("key_global_default_risk_threshold")
@@ -103,6 +105,48 @@ class PolicyDataStore(private val context: Context) : AuthTokenProvider {
         dataStore.edit { preferences ->
             preferences[KEY_ELEVENLABS_API_KEY] = key
         }
+    }
+
+    val userVerifiedNumber: Flow<String?> = dataStore.data
+        .catch { exception ->
+            if (exception is IOException) emit(emptyPreferences()) else throw exception
+        }
+        .map { preferences ->
+            preferences[KEY_USER_VERIFIED_NUMBER]
+        }
+
+    suspend fun setUserVerifiedNumber(number: String) {
+        dataStore.edit { preferences ->
+            preferences[KEY_USER_VERIFIED_NUMBER] = number
+        }
+    }
+
+    suspend fun getUserVerifiedNumber(): String? {
+        return dataStore.data
+            .catch { emit(emptyPreferences()) }
+            .map { it[KEY_USER_VERIFIED_NUMBER] }
+            .firstOrNull()
+    }
+
+    val isOnboardingComplete: Flow<Boolean> = dataStore.data
+        .catch { exception ->
+            if (exception is IOException) emit(emptyPreferences()) else throw exception
+        }
+        .map { preferences ->
+            preferences[KEY_ONBOARDING_COMPLETE] ?: false
+        }
+
+    suspend fun setOnboardingComplete(completed: Boolean = true) {
+        dataStore.edit { preferences ->
+            preferences[KEY_ONBOARDING_COMPLETE] = completed
+        }
+    }
+
+    suspend fun getIsOnboardingComplete(): Boolean {
+        return dataStore.data
+            .catch { emit(emptyPreferences()) }
+            .map { it[KEY_ONBOARDING_COMPLETE] ?: false }
+            .firstOrNull() ?: false
     }
 
     val isGlobalScreeningEnabled: Flow<Boolean> = dataStore.data

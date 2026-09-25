@@ -27,7 +27,18 @@ class LiveAiCallViewModel(
     val elevenLabsSessionState: StateFlow<com.example.equal_plus.telephony.ElevenLabsSessionState> = elevenLabsManager.sessionState
 
     init {
+        observeSessionManager()
         observeVoipClient()
+    }
+
+    private fun observeSessionManager() {
+        viewModelScope.launch {
+            com.example.equal_plus.telephony.LiveCallSessionManager.activeCallState.collect { sessionState ->
+                if (sessionState.callId.isNotBlank() || sessionState.connectionState !is VoipConnectionState.Disconnected) {
+                    _liveCallState.value = sessionState
+                }
+            }
+        }
     }
 
     private fun observeVoipClient() {
@@ -121,6 +132,9 @@ class LiveAiCallViewModel(
     }
 
     fun endCall() {
+        com.example.equal_plus.callscreening.AppContextProvider.applicationContext?.let { ctx ->
+            com.example.equal_plus.telephony.LiveCallSessionManager.onCallEnded(ctx)
+        }
         voipGatewayClient.endCall()
         _liveCallState.value = _liveCallState.value.copy(
             status = LiveCallStatus.ENDED,

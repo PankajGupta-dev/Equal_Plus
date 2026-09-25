@@ -12,6 +12,12 @@ import androidx.navigation.ui.AppBarConfiguration
 import androidx.navigation.ui.setupWithNavController
 import com.example.equal_plus.databinding.ActivityMainBinding
 
+import androidx.lifecycle.lifecycleScope
+import com.example.equal_plus.data.local.PolicyDataStore
+import com.example.equal_plus.onboarding.OnboardingActivity
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
+
 class MainActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityMainBinding
@@ -19,6 +25,22 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        val policyDataStore = PolicyDataStore(applicationContext)
+        val isComplete = runCatching {
+            kotlinx.coroutines.runBlocking {
+                kotlinx.coroutines.withTimeoutOrNull(500) {
+                    policyDataStore.isOnboardingComplete.first()
+                }
+            }
+        }.getOrNull() ?: false
+
+        if (!isComplete) {
+            OnboardingActivity.start(this)
+            finish()
+            return
+        }
+
         enableEdgeToEdge()
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
