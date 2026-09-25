@@ -313,17 +313,9 @@
                     android:layout_height="wrap_content"
                     android:layout_marginTop="4dp"
                     android:gravity="center"
-                    android:text="Screened calls and AI activity will show up here."
+                    android:text="Real-time screened calls and AI activity will appear here as incoming calls arrive."
                     android:textSize="13sp"
                     android:textColor="?android:attr/textColorSecondary" />
-
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/btnSeedDemoData"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="16dp"
-                    android:text="Load Sample Call Data"
-                    app:icon="@drawable/ic_call" />
             </LinearLayout>
 
             <!-- Loading Progress Bar -->

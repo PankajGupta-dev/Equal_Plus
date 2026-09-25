@@ -5,8 +5,7 @@ package com.example.equal_plus.data.network
  */
 object ElevenLabsConfig {
     /**
-     * ElevenLabs API Key provided for AI call screening and conversational voice processing.
-     */
+     * ElevenLabs API Key provided for AI call screening and conversational voice processing.*/
     const val API_KEY = "sk_14a6926cabe2b9e1e69aa41c1440dbb02b6a63c05da3851c"
 
     const val BASE_URL = "https://api.elevenlabs.io/"

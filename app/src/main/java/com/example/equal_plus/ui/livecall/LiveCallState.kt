@@ -10,15 +10,15 @@ enum class LiveCallStatus {
 }
 
 data class LiveCallState(
-    val callId: String = "live_call_8821",
-    val callerName: String = "IRS Enforcement Bureau",
-    val phoneNumber: String = "+1 (800) 829-1040",
-    val durationFormatted: String = "00:42",
-    val detectedPurpose: String = "Fraudulent tax penalty demand & gift card scam attempt",
-    val riskLevel: RiskLevel = RiskLevel.HIGH,
-    val aiStatusText: String = "AI Assistant challenging caller authority and requesting badge identification...",
-    val latestTranscript: String = "Caller: 'You have unpaid federal back taxes. Immediate payment is required to avoid arrest.'\nAI: 'Please provide your IRS employee badge identification and case file number for verification.'",
-    val category: String = "Financial Scam / Impersonation",
+    val callId: String = "",
+    val callerName: String = "No Active Call",
+    val phoneNumber: String = "",
+    val durationFormatted: String = "00:00",
+    val detectedPurpose: String = "Standing by for incoming calls...",
+    val riskLevel: RiskLevel = RiskLevel.SAFE,
+    val aiStatusText: String = "AI screening service standing by...",
+    val latestTranscript: String = "",
+    val category: String = "",
     val status: LiveCallStatus = LiveCallStatus.SCREENING,
-    val connectionState: VoipConnectionState = VoipConnectionState.Streaming
+    val connectionState: VoipConnectionState = VoipConnectionState.Disconnected
 )

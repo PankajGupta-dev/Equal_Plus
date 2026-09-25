@@ -59,7 +59,7 @@
         tools:layout="@layout/fragment_conversation_details">
         <argument
             android:name="callId"
-            android:defaultValue="default_call_id"
+            android:defaultValue=""
             app:argType="string" />
         <action
             android:id="@+id/action_conversationDetailsFragment_to_homeFragment"

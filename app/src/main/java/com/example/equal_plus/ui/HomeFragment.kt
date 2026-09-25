@@ -84,10 +84,6 @@ class HomeFragment : Fragment() {
         binding.btnViewAllHistory.setOnClickListener {
             findNavController().navigate(R.id.action_homeFragment_to_callHistoryFragment)
         }
-
-        binding.btnSeedDemoData.setOnClickListener {
-            viewModel.seedDemoData()
-        }
     }
 
     private fun observeState() {

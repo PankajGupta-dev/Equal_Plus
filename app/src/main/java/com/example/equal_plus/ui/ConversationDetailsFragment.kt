@@ -37,7 +37,7 @@ class ConversationDetailsFragment : Fragment() {
     }
 
     private val callId: String by lazy {
-        arguments?.getString(ARG_CALL_ID) ?: "sample_call_id"
+        arguments?.getString(ARG_CALL_ID) ?: ""
     }
 
     private val viewModel: ConversationDetailsViewModel by viewModels {
@@ -166,15 +166,12 @@ class ConversationDetailsFragment : Fragment() {
         val summaryText = call.summary ?: call.transcription ?: "No summary recorded for this screening session."
         binding.tvSummaryText.text = summaryText
 
-        if (call.riskLevel == RiskLevel.HIGH || call.riskLevel == RiskLevel.CRITICAL) {
-            binding.tvIntentText.text = "Primary Intent: Fraudulent Impersonation & OTP Harvesting • Key Entities: [Security Code, Card Number]"
-            binding.tvSentimentText.text = "Caller Sentiment: Coercive / Urgent • AI Confidence: 96%"
-        } else if (call.category.equals("Delivery", ignoreCase = true)) {
-            binding.tvIntentText.text = "Primary Intent: Package Dropoff Coordination • Key Entities: [Porch, Gate, Side Entrance]"
-            binding.tvSentimentText.text = "Caller Sentiment: Neutral • AI Confidence: 99%"
+        val detectedCategory = if (!call.category.isNullOrBlank()) call.category else "General"
+        binding.tvIntentText.text = "Category: $detectedCategory • Status: ${call.status.name}"
+        binding.tvSentimentText.text = if (call.isSpam) {
+            "AI Classification: Flagged as High-Risk / Spam (${String.format(Locale.getDefault(), "%.0f%%", call.riskScore * 100)} Risk Score)"
         } else {
-            binding.tvIntentText.text = "Primary Intent: Inbound Inquiry • Key Entities: [Phone Identity]"
-            binding.tvSentimentText.text = "Caller Sentiment: Neutral • AI Confidence: 92%"
+            "AI Classification: Verified Legitimate Call"
         }
     }
 

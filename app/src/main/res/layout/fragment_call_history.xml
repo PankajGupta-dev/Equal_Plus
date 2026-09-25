@@ -138,17 +138,9 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="4dp"
                 android:gravity="center"
-                android:text="No calls match the selected filter."
+                android:text="Real-time screened calls and history will be listed here as they are received."
                 android:textColor="?android:attr/textColorSecondary"
                 android:textSize="13sp" />
-
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btnSeedHistoryData"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="16dp"
-                android:text="Load Sample Call Data"
-                app:icon="@drawable/ic_call" />
         </LinearLayout>
 
         <!-- RecyclerView List -->

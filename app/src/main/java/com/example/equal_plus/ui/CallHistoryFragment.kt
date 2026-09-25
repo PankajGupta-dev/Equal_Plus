@@ -45,7 +45,6 @@ class CallHistoryFragment : Fragment() {
 
         setupRecyclerView()
         setupChipFilters()
-        setupListeners()
         observeState()
     }
 
@@ -75,12 +74,6 @@ class CallHistoryFragment : Fragment() {
                 else -> CallFilter.ALL
             }
             viewModel.setFilter(filter)
-        }
-    }
-
-    private fun setupListeners() {
-        binding.btnSeedHistoryData.setOnClickListener {
-            viewModel.seedDemoData()
         }
     }
 

@@ -18,7 +18,7 @@ class LiveAiCallViewModel(
 
     private val _liveCallState = MutableStateFlow(
         LiveCallState(
-            connectionState = VoipConnectionState.Streaming
+            connectionState = VoipConnectionState.Disconnected
         )
     )
     val liveCallState: StateFlow<LiveCallState> = _liveCallState.asStateFlow()
@@ -104,8 +104,19 @@ class LiveAiCallViewModel(
         }
     }
 
-    fun startCallSession(callId: String = "live_call_8821", wsUrl: String = "wss://api.equalplus.ai/v1/voip/stream") {
-        _liveCallState.value = _liveCallState.value.copy(callId = callId)
+    fun startCallSession(
+        callId: String,
+        callerName: String? = null,
+        phoneNumber: String? = null,
+        wsUrl: String = "wss://api.equalplus.ai/v1/voip/stream"
+    ) {
+        _liveCallState.value = _liveCallState.value.copy(
+            callId = callId,
+            callerName = callerName ?: "Incoming Caller",
+            phoneNumber = phoneNumber ?: "",
+            status = LiveCallStatus.SCREENING,
+            connectionState = VoipConnectionState.Connecting
+        )
         voipGatewayClient.connect(wsUrl, callId)
     }
 

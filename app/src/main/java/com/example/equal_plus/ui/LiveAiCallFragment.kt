@@ -53,9 +53,7 @@ class LiveAiCallFragment : Fragment() {
             viewModel.takeOverCall()
         }
 
-        binding.btnTestNavigateDetails.setOnClickListener {
-            viewModel.triggerEndCallForNavigation()
-        }
+        binding.btnTestNavigateDetails.visibility = View.GONE
     }
 
     private fun observeState() {
@@ -64,7 +62,7 @@ class LiveAiCallFragment : Fragment() {
                 viewModel.liveCallState.collect { state ->
                     renderState(state)
 
-                    if (state.status == LiveCallStatus.ENDED) {
+                    if (state.status == LiveCallStatus.ENDED && state.callId.isNotBlank()) {
                         val bundle = bundleOf(ConversationDetailsFragment.ARG_CALL_ID to state.callId)
                         findNavController().navigate(
                             R.id.action_liveAiCallFragment_to_conversationDetailsFragment,
@@ -77,6 +75,12 @@ class LiveAiCallFragment : Fragment() {
     }
 
     private fun renderState(state: LiveCallState) {
+        val hasActiveCall = state.callId.isNotBlank() && state.connectionState !is VoipConnectionState.Disconnected
+
+        binding.layoutEmptyLiveCall.visibility = if (hasActiveCall) View.GONE else View.VISIBLE
+        binding.btnEndCall.isEnabled = hasActiveCall
+        binding.btnTakeOverCall.isEnabled = hasActiveCall
+
         binding.tvCallerName.text = state.callerName
         binding.tvPhoneNumber.text = state.phoneNumber
         binding.tvCallDuration.text = state.durationFormatted
@@ -101,7 +105,7 @@ class LiveAiCallFragment : Fragment() {
                 binding.tvLiveSessionStatus.text = "VOIP SESSION ENDED"
             }
             is VoipConnectionState.Disconnected -> {
-                binding.tvLiveSessionStatus.text = "VOIP DISCONNECTED"
+                binding.tvLiveSessionStatus.text = if (hasActiveCall) "VOIP DISCONNECTED" else "STANDBY - READY FOR CALLS"
             }
             is VoipConnectionState.Error -> {
                 binding.tvLiveSessionStatus.text = "VOIP ERROR: ${(state.connectionState as VoipConnectionState.Error).message}"
