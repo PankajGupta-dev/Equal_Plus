@@ -44,6 +44,7 @@ interface VoipGatewayClient {
     val connectionState: StateFlow<VoipConnectionState>
     val inboundMessages: SharedFlow<VoipInboundMessage>
     fun connect(wsUrl: String, callId: String)
+    fun reconnect()
     fun sendAudio(data: ByteArray)
     fun sendText(messageJson: String)
     fun sendTakeoverSignal()
@@ -57,7 +58,9 @@ class VoipGatewayClientImpl(
         .pingInterval(15, TimeUnit.SECONDS)
         .build(),
     private val gson: Gson = Gson(),
-    private val scope: CoroutineScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    private val scope: CoroutineScope = CoroutineScope(Dispatchers.IO + SupervisorJob()),
+    private val maxRetries: Int = 3,
+    private val initialRetryDelayMs: Long = 1000L
 ) : VoipGatewayClient {
 
     private val _connectionState = MutableStateFlow<VoipConnectionState>(VoipConnectionState.Disconnected)
@@ -68,10 +71,20 @@ class VoipGatewayClientImpl(
 
     private var activeWebSocket: WebSocket? = null
     private var currentCallId: String? = null
+    private var currentWsUrl: String? = null
+    private var retryCount = 0
+    private var isUserDisconnected = false
 
     override fun connect(wsUrl: String, callId: String) {
         disconnect()
+        isUserDisconnected = false
         currentCallId = callId
+        currentWsUrl = wsUrl
+        retryCount = 0
+        establishWebSocketConnection(wsUrl, callId)
+    }
+
+    private fun establishWebSocketConnection(wsUrl: String, callId: String) {
         _connectionState.value = VoipConnectionState.Connecting
 
         val request = Request.Builder()
@@ -82,6 +95,7 @@ class VoipGatewayClientImpl(
 
         activeWebSocket = okHttpClient.newWebSocket(request, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
+                retryCount = 0
                 _connectionState.value = VoipConnectionState.Connected
                 // Send session initialization packet
                 val initPayload = mapOf(
@@ -126,18 +140,55 @@ class VoipGatewayClientImpl(
             }
 
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
-                _connectionState.value = VoipConnectionState.Disconnected
                 activeWebSocket = null
+                if (_connectionState.value !is VoipConnectionState.CallEnded && !isUserDisconnected) {
+                    handleConnectionFailure(Exception("WebSocket closed unexpectedly"))
+                } else if (_connectionState.value !is VoipConnectionState.CallEnded) {
+                    _connectionState.value = VoipConnectionState.Disconnected
+                }
             }
 
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-                _connectionState.value = VoipConnectionState.Error(
-                    message = t.localizedMessage ?: "WebSocket connection failure",
-                    throwable = t
-                )
                 activeWebSocket = null
+                if (!isUserDisconnected && _connectionState.value !is VoipConnectionState.CallEnded) {
+                    handleConnectionFailure(t)
+                } else {
+                    _connectionState.value = VoipConnectionState.Error(
+                        message = t.localizedMessage ?: "WebSocket connection failure",
+                        throwable = t
+                    )
+                }
             }
         })
+    }
+
+    private fun handleConnectionFailure(t: Throwable) {
+        if (retryCount < maxRetries && !isUserDisconnected) {
+            retryCount++
+            val backoffDelay = initialRetryDelayMs * (1L shl (retryCount - 1))
+            scope.launch {
+                _connectionState.value = VoipConnectionState.Connecting
+                kotlinx.coroutines.delay(backoffDelay)
+                val url = currentWsUrl
+                val id = currentCallId
+                if (url != null && id != null && !isUserDisconnected) {
+                    establishWebSocketConnection(url, id)
+                }
+            }
+        } else {
+            _connectionState.value = VoipConnectionState.Error(
+                message = "VoIP stream disconnected after $retryCount retry attempts: ${t.localizedMessage}",
+                throwable = t
+            )
+        }
+    }
+
+    override fun reconnect() {
+        val url = currentWsUrl
+        val id = currentCallId
+        if (url != null && id != null) {
+            connect(url, id)
+        }
     }
 
     override fun sendAudio(data: ByteArray) {
@@ -158,6 +209,7 @@ class VoipGatewayClientImpl(
     }
 
     override fun endCall() {
+        isUserDisconnected = true
         val payload = mapOf(
             "action" to "end_call",
             "call_id" to (currentCallId ?: ""),
@@ -169,6 +221,7 @@ class VoipGatewayClientImpl(
     }
 
     override fun disconnect() {
+        isUserDisconnected = true
         activeWebSocket?.close(1000, "User disconnected session")
         activeWebSocket = null
         if (_connectionState.value !is VoipConnectionState.CallEnded) {

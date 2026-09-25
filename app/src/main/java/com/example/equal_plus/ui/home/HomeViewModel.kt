@@ -34,6 +34,13 @@ class HomeViewModel(
 
     init {
         observeCalls()
+        refreshCalls()
+    }
+
+    fun refreshCalls() {
+        viewModelScope.launch {
+            callRepository.syncCallsWithFallback()
+        }
     }
 
     private fun observeCalls() {

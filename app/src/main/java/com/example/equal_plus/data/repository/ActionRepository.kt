@@ -7,6 +7,7 @@ import com.example.equal_plus.data.model.ActionType
 import com.example.equal_plus.data.network.ApiService
 import com.example.equal_plus.data.network.model.ActionDto
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.firstOrNull
 
 interface ActionRepository {
     fun getActionsForCall(callId: String): Flow<List<ActionEntity>>
@@ -22,6 +23,8 @@ interface ActionRepository {
     // Network-then-cache integration
     suspend fun syncActionsForCall(callId: String): Result<List<ActionEntity>> = Result.success(emptyList())
     suspend fun uploadAction(action: ActionEntity): Result<ActionEntity> = Result.success(action)
+    suspend fun syncActionsWithFallback(callId: String): com.example.equal_plus.data.model.Resource<List<ActionEntity>> =
+        com.example.equal_plus.data.model.Resource.Success(emptyList())
 }
 
 class ActionRepositoryImpl(
@@ -89,6 +92,27 @@ class ActionRepositoryImpl(
         } catch (e: Exception) {
             Result.failure(e)
         }
+    }
+
+    override suspend fun syncActionsWithFallback(callId: String): com.example.equal_plus.data.model.Resource<List<ActionEntity>> {
+        val service = apiService
+        if (service != null) {
+            try {
+                val response = service.getActionsForCall(callId)
+                if (response.isSuccessful && response.body() != null) {
+                    val remoteEntities = response.body()!!.map { it.toEntity() }
+                    if (remoteEntities.isNotEmpty()) {
+                        actionDao.insertActions(remoteEntities)
+                    }
+                    return com.example.equal_plus.data.model.Resource.Success(remoteEntities)
+                }
+            } catch (e: Exception) {
+                // Offline / network failure: fallback to Room cache
+            }
+        }
+        val cachedActions = actionDao.getActionsForCall(callId)
+        val cached = cachedActions.firstOrNull() ?: emptyList()
+        return com.example.equal_plus.data.model.Resource.Success(cached)
     }
 }
 

@@ -43,6 +43,14 @@ class ConversationDetailsViewModel(
     init {
         ensureSampleDataForCallId()
         observeDetails()
+        refreshDetails()
+    }
+
+    fun refreshDetails() {
+        viewModelScope.launch {
+            conversationRepository.syncConversationsWithFallback(callId)
+            actionRepository.syncActionsWithFallback(callId)
+        }
     }
 
     private fun observeDetails() {

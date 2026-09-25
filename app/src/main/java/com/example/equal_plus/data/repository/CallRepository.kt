@@ -7,6 +7,7 @@ import com.example.equal_plus.data.model.RiskLevel
 import com.example.equal_plus.data.network.ApiService
 import com.example.equal_plus.data.network.model.CallDto
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.firstOrNull
 
 interface CallRepository {
     fun getAllCalls(): Flow<List<CallEntity>>
@@ -27,6 +28,8 @@ interface CallRepository {
     suspend fun syncCallsFromBackend(): Result<List<CallEntity>> = Result.success(emptyList())
     suspend fun fetchAndCacheCallById(id: String): Result<CallEntity?> = Result.success(null)
     suspend fun uploadCall(call: CallEntity): Result<CallEntity> = Result.success(call)
+    suspend fun syncCallsWithFallback(): com.example.equal_plus.data.model.Resource<List<CallEntity>> =
+        com.example.equal_plus.data.model.Resource.Success(emptyList())
 }
 
 class CallRepositoryImpl(
@@ -112,6 +115,27 @@ class CallRepositoryImpl(
         } catch (e: Exception) {
             Result.failure(e)
         }
+    }
+
+    override suspend fun syncCallsWithFallback(): com.example.equal_plus.data.model.Resource<List<CallEntity>> {
+        val service = apiService
+        if (service != null) {
+            try {
+                val response = service.getCalls()
+                if (response.isSuccessful && response.body() != null) {
+                    val remoteCalls = response.body()!!.map { it.toEntity() }
+                    if (remoteCalls.isNotEmpty()) {
+                        callDao.insertCalls(remoteCalls)
+                    }
+                    return com.example.equal_plus.data.model.Resource.Success(remoteCalls)
+                }
+            } catch (e: Exception) {
+                // Offline / network failure: fallback to Room cache
+            }
+        }
+        val cachedCalls = callDao.getAllCalls()
+        val cached = cachedCalls.firstOrNull() ?: emptyList()
+        return com.example.equal_plus.data.model.Resource.Success(cached)
     }
 }
 

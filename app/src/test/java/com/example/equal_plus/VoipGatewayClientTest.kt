@@ -47,6 +47,7 @@ class VoipGatewayClientTest {
         var takeoverSent = false
         var endCallCalled = false
         var disconnectCalled = false
+        var reconnectCalled = false
 
         fun emitState(state: VoipConnectionState) {
             _connectionState.value = state
@@ -60,6 +61,11 @@ class VoipGatewayClientTest {
             lastConnectedUrl = wsUrl
             lastConnectedCallId = callId
             _connectionState.value = VoipConnectionState.Connected
+        }
+
+        override fun reconnect() {
+            reconnectCalled = true
+            _connectionState.value = VoipConnectionState.Connecting
         }
 
         override fun sendAudio(data: ByteArray) {

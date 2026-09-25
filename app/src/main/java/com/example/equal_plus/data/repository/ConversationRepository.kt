@@ -19,6 +19,8 @@ interface ConversationRepository {
     // Network-then-cache integration
     suspend fun syncConversationsForCall(callId: String): Result<List<ConversationEntity>> = Result.success(emptyList())
     suspend fun uploadConversationTurn(conversation: ConversationEntity): Result<ConversationEntity> = Result.success(conversation)
+    suspend fun syncConversationsWithFallback(callId: String): com.example.equal_plus.data.model.Resource<List<ConversationEntity>> =
+        com.example.equal_plus.data.model.Resource.Success(emptyList())
 }
 
 class ConversationRepositoryImpl(
@@ -83,6 +85,26 @@ class ConversationRepositoryImpl(
         } catch (e: Exception) {
             Result.failure(e)
         }
+    }
+
+    override suspend fun syncConversationsWithFallback(callId: String): com.example.equal_plus.data.model.Resource<List<ConversationEntity>> {
+        val service = apiService
+        if (service != null) {
+            try {
+                val response = service.getConversationsForCall(callId)
+                if (response.isSuccessful && response.body() != null) {
+                    val remoteEntities = response.body()!!.map { it.toEntity() }
+                    if (remoteEntities.isNotEmpty()) {
+                        conversationDao.insertConversations(remoteEntities)
+                    }
+                    return com.example.equal_plus.data.model.Resource.Success(remoteEntities)
+                }
+            } catch (e: Exception) {
+                // Offline / network failure: fallback to Room cache
+            }
+        }
+        val cached = conversationDao.getConversationsForCallDirect(callId)
+        return com.example.equal_plus.data.model.Resource.Success(cached)
     }
 }
 

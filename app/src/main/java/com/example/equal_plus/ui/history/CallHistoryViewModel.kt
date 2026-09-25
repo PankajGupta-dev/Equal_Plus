@@ -32,6 +32,13 @@ class CallHistoryViewModel(
 
     init {
         observeCallsAndFilter()
+        refreshCalls()
+    }
+
+    fun refreshCalls() {
+        viewModelScope.launch {
+            callRepository.syncCallsWithFallback()
+        }
     }
 
     private fun observeCallsAndFilter() {
