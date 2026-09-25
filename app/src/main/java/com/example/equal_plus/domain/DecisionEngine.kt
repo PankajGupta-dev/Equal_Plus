@@ -53,6 +53,7 @@ data class DecisionResult(
 class DecisionEngine(
     private val actionRepository: ActionRepository,
     private val callRepository: CallRepository? = null,
+    private val notificationHelper: com.example.equal_plus.service.NotificationHelper? = null,
     private val gson: Gson = GsonBuilder()
         .registerTypeAdapter(RiskLevel::class.java, RiskLevelDeserializer())
         .registerTypeAdapter(NextAction::class.java, NextActionDeserializer())
@@ -173,8 +174,10 @@ class DecisionEngine(
         }
 
         // 4. Update CallRepository if provided
+        var existingCallEntity: com.example.equal_plus.data.local.entity.CallEntity? = null
         callRepository?.let { repo ->
             val existingCall = repo.getCallByIdDirect(callId)
+            existingCallEntity = existingCall
             if (existingCall != null) {
                 val updated = existingCall.copy(
                     status = targetCallStatus,
@@ -184,6 +187,25 @@ class DecisionEngine(
                     updatedAt = now
                 )
                 repo.updateCall(updated)
+            }
+        }
+
+        // 5. Trigger Notifications for NOTIFY_USER / WARN_USER / High Risk calls
+        notificationHelper?.let { helper ->
+            val notifyAction = generatedActions.find { it.actionType == ActionType.NOTIFY_USER || it.actionType == ActionType.WARN_USER }
+            if (notifyAction != null) {
+                helper.showNotifyUserAlert(
+                    callId = callId,
+                    title = "Equal Plus Action Alert",
+                    message = notifyAction.description ?: "Action required on screened call.",
+                    riskLevel = targetRiskLevel
+                )
+            } else if (targetCallStatus == CallStatus.BLOCKED && (targetRiskLevel == RiskLevel.HIGH || targetRiskLevel == RiskLevel.CRITICAL)) {
+                helper.showHighRiskTerminatedAlert(
+                    callId = callId,
+                    callerNumber = existingCallEntity?.phoneNumber ?: "Suspicious Caller",
+                    reason = decision.response.ifBlank { "Scam pattern detected." }
+                )
             }
         }
 
