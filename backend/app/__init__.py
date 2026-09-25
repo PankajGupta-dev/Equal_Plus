@@ -1,1 +1,0 @@
-"""Equal Plus Backend Package"""
