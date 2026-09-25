@@ -123,10 +123,12 @@ class CallScreeningServiceImpl(
             }
 
             is CallDecision.UnknownCaller -> {
-                // NO MATCH found: Silence ringer from user so user isn't disturbed
+                // NO MATCH found: Silence ringer and skip native notification so call is suppressed from phone screen
                 responseBuilder
                     .setDisallowCall(false)
                     .setSilenceCall(true)
+                    .setSkipNotification(true)
+                    .setSkipCallLog(false)
 
                 // Log into Room DB and broadcast active session to Live Call screen
                 LiveCallSessionManager.onCallEntering(
