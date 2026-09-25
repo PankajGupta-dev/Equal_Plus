@@ -3,7 +3,43 @@
     xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
     android:id="@+id/nav_graph"
-    app:startDestination="@id/homeFragment">
+    app:startDestination="@id/phoneVerificationFragment">
+
+    <!-- ══════════════════════════════════════════════════════
+         Auth flow — always the first destinations in the graph.
+         MainActivity skips to homeFragment if is_verified=true.
+         ══════════════════════════════════════════════════════ -->
+
+    <fragment
+        android:id="@+id/phoneVerificationFragment"
+        android:name="com.example.equal_plus.ui.auth.PhoneVerificationFragment"
+        android:label="Verify Phone"
+        tools:layout="@layout/fragment_phone_verification">
+        <action
+            android:id="@+id/action_phoneVerificationFragmentToOtpEntryFragment"
+            app:destination="@id/otpEntryFragment" />
+    </fragment>
+
+    <fragment
+        android:id="@+id/otpEntryFragment"
+        android:name="com.example.equal_plus.ui.auth.OtpEntryFragment"
+        android:label="Enter Code"
+        tools:layout="@layout/fragment_otp_entry">
+        <!-- phone number passed as Safe Args from PhoneVerificationFragment -->
+        <argument
+            android:name="phoneNumber"
+            android:defaultValue=""
+            app:argType="string" />
+        <action
+            android:id="@+id/action_otpEntryFragment_to_homeFragment"
+            app:destination="@id/homeFragment"
+            app:popUpTo="@id/nav_graph"
+            app:popUpToInclusive="true" />
+    </fragment>
+
+    <!-- ══════════════════════════════════════════════════════
+         Main app destinations
+         ══════════════════════════════════════════════════════ -->
 
     <fragment
         android:id="@+id/homeFragment"

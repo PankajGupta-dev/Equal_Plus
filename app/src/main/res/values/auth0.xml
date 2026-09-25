@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Auth0 tenant configuration — never hardcode these values in Kotlin -->
+    <string name="com_auth0_domain" translatable="false">dev-c2erv6crn3b4hsie.us.auth0.com</string>
+    <string name="com_auth0_client_id" translatable="false">YOUR_AUTH0_CLIENT_ID</string>
+</resources>

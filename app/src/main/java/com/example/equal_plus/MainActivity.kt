@@ -6,11 +6,17 @@ import androidx.activity.enableEdgeToEdge
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.navigation.NavController
 import androidx.navigation.fragment.NavHostFragment
 import androidx.navigation.ui.AppBarConfiguration
 import androidx.navigation.ui.setupWithNavController
+import com.example.equal_plus.data.local.AuthDataStore
 import com.example.equal_plus.databinding.ActivityMainBinding
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 
 import androidx.lifecycle.lifecycleScope
 import com.example.equal_plus.data.local.PolicyDataStore
@@ -66,14 +72,34 @@ class MainActivity : AppCompatActivity() {
         binding.toolbar.setupWithNavController(navController, appBarConfiguration)
         binding.bottomNav.setupWithNavController(navController)
 
+        // Hide bottom nav on detail / auth screens
         navController.addOnDestinationChangedListener { _, destination, _ ->
             when (destination.id) {
-                R.id.conversationDetailsFragment -> {
-                    binding.bottomNav.visibility = View.GONE
+                R.id.conversationDetailsFragment,
+                R.id.phoneVerificationFragment,
+                R.id.otpEntryFragment -> binding.bottomNav.visibility = View.GONE
+                else -> binding.bottomNav.visibility = View.VISIBLE
+            }
+        }
+
+        // ── Auth gate ────────────────────────────────────────────────────────
+        // Read is_verified once on startup.  If already verified, immediately
+        // skip the auth back-stack and navigate straight to HomeFragment.
+        // This runs AFTER the nav graph is wired (so the NavController is ready).
+        if (savedInstanceState == null) {
+            lifecycleScope.launch {
+                val authDataStore = AuthDataStore(applicationContext)
+                val isVerified = authDataStore.isVerified.first()
+                if (isVerified) {
+                    navController.navigate(
+                        R.id.homeFragment,
+                        null,
+                        androidx.navigation.NavOptions.Builder()
+                            .setPopUpTo(R.id.nav_graph, inclusive = true)
+                            .build()
+                    )
                 }
-                else -> {
-                    binding.bottomNav.visibility = View.VISIBLE
-                }
+                // else: stay on phoneVerificationFragment (graph start destination)
             }
         }
     }

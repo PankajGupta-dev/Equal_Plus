@@ -16,6 +16,8 @@ android {
         versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        manifestPlaceholders["auth0Domain"] = "dev-c2erv6crn3b4hsie.us.auth0.com"
+        manifestPlaceholders["auth0Scheme"] = "https"
     }
 
     buildTypes {
@@ -79,6 +81,9 @@ dependencies {
     implementation(libs.androidx.lifecycle.viewmodel.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.lifecycle.livedata.ktx)
+
+    // Auth0 Passwordless SMS
+    implementation(libs.auth0)
 
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)
