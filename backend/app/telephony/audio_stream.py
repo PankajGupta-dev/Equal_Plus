@@ -2,7 +2,7 @@ import asyncio
 import logging
 from typing import AsyncGenerator, AsyncIterable, Dict, Any, Optional, Union
 from backend.app.ai.elevenlabs import stt_stream
-from backend.app.ai.gemini import handle_gemini_intent
+from backend.app.ai.decision import get_decision
 
 logger = logging.getLogger(__name__)
 
@@ -13,7 +13,7 @@ async def process_audio_stream(
 ) -> AsyncGenerator[Dict[str, Any], None]:
     """
     Processes live incoming caller audio chunks:
-    caller audio chunks -> ElevenLabs Scribe v2 Realtime STT stream -> transcript text -> Gemini intent handler.
+    caller audio chunks -> ElevenLabs Scribe v2 Realtime STT stream -> transcript text -> SLM/Groq decision orchestrator.
     Yields structured decision JSON objects incrementally.
     """
     logger.info(f"Starting audio stream processing for call_id={call_id}")
@@ -22,10 +22,10 @@ async def process_audio_stream(
     async for transcript_segment in stt_stream(audio_chunk_iterator, ws_url=ws_url):
         logger.debug(f"Received transcript segment: {transcript_segment}")
         
-        # 2. Feed text segment into Gemini intent/decision handler
-        decision = await handle_gemini_intent(
+        # 2. Feed text segment into SLM-first, Groq-fallback reasoning orchestrator
+        decision = await get_decision(
             transcript=transcript_segment,
-            call_id=call_id
+            context={"call_id": call_id}
         )
         
         # 3. Yield decision object to telephony layer / caller
