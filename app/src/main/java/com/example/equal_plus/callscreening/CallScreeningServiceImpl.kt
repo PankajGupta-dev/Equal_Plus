@@ -23,7 +23,7 @@ class CallScreeningServiceImpl(
     private val contactDaoProvider: (android.content.Context) -> KnownContactDao = { context ->
         AppDatabase.getInstance(context).knownContactDao()
     },
-    private val aiHandoffTrigger: AiCallHandoffTrigger = AiCallHandoffTriggerStub()
+    private val aiHandoffTrigger: AiCallHandoffTrigger = AiCallHandoffTriggerImpl()
 ) : CallScreeningService() {
 
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())

@@ -54,6 +54,8 @@ class DecisionEngine(
     private val actionRepository: ActionRepository,
     private val callRepository: CallRepository? = null,
     private val notificationHelper: com.example.equal_plus.service.NotificationHelper? = null,
+    private val context: android.content.Context? = null,
+    private val actionExecutorDispatcher: com.example.equal_plus.service.ActionExecutorDispatcher? = null,
     private val gson: Gson = GsonBuilder()
         .registerTypeAdapter(RiskLevel::class.java, RiskLevelDeserializer())
         .registerTypeAdapter(NextAction::class.java, NextActionDeserializer())
@@ -171,6 +173,18 @@ class DecisionEngine(
         // 3. Persist actions into ActionRepository
         if (generatedActions.isNotEmpty()) {
             actionRepository.insertActions(generatedActions)
+        }
+
+        // 3.5 Dispatch Android system actions via ActionExecutorDispatcher
+        context?.let { ctx ->
+            val dispatcher = actionExecutorDispatcher ?: com.example.equal_plus.service.ActionExecutorDispatcher(ctx, notificationHelper)
+            for (action in generatedActions) {
+                try {
+                    dispatcher.dispatch(action)
+                } catch (e: Exception) {
+                    android.util.Log.e("DecisionEngine", "Error executing action ${action.actionType} for call $callId", e)
+                }
+            }
         }
 
         // 4. Update CallRepository if provided

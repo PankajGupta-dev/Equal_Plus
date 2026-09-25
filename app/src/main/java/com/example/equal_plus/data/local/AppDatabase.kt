@@ -8,10 +8,12 @@ import androidx.room.TypeConverters
 import com.example.equal_plus.data.local.dao.ActionDao
 import com.example.equal_plus.data.local.dao.CallDao
 import com.example.equal_plus.data.local.dao.ConversationDao
+import com.example.equal_plus.data.local.dao.DeliveryInstructionDao
 import com.example.equal_plus.data.local.dao.KnownContactDao
 import com.example.equal_plus.data.local.entity.ActionEntity
 import com.example.equal_plus.data.local.entity.CallEntity
 import com.example.equal_plus.data.local.entity.ConversationEntity
+import com.example.equal_plus.data.local.entity.DeliveryInstructionEntity
 import com.example.equal_plus.data.local.entity.KnownContactEntity
 
 @Database(
@@ -19,9 +21,10 @@ import com.example.equal_plus.data.local.entity.KnownContactEntity
         CallEntity::class,
         ConversationEntity::class,
         ActionEntity::class,
-        KnownContactEntity::class
+        KnownContactEntity::class,
+        DeliveryInstructionEntity::class
     ],
-    version = 2,
+    version = 3,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -31,6 +34,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun conversationDao(): ConversationDao
     abstract fun actionDao(): ActionDao
     abstract fun knownContactDao(): KnownContactDao
+    abstract fun deliveryInstructionDao(): DeliveryInstructionDao
 
     companion object {
         private const val DATABASE_NAME = "equal_plus_db"
