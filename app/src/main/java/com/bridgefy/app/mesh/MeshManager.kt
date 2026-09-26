@@ -381,14 +381,14 @@ class MeshManager(
                 append("\nLocation: $lat, $lon")
             }
         }
-        val encrypted = encryptPayload(sosPayload) ?: sosPayload
-
+        // SOS emergency broadcast is kept plaintext so all nearby devices in 15m radius
+        // can immediately read and display the alert without needing a shared key.
         val message = MeshMessage(
             id = UUID.randomUUID().toString(),
             senderId = deviceId,
             targetId = null,  // broadcast to all
             type = MessageType.SOS,
-            payload = encrypted,
+            payload = sosPayload,
             timestamp = System.currentTimeMillis(),
             ttl = 7,
             hopCount = 0,

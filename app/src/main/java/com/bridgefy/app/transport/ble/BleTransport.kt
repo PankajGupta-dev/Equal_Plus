@@ -86,6 +86,17 @@ class BleTransport(
     private val json = Json { ignoreUnknownKeys = true }
     private val recentSosBeacons = ConcurrentHashMap<String, Long>()
 
+    /**
+     * Tracks all BLE devices recently detected in radio range (<= 15m radius).
+     * Used for immediate zero-handshake SOS delivery to unconnected nearby phones.
+     */
+    data class ScannedDeviceInfo(
+        val device: BluetoothDevice,
+        val rssi: Int,
+        val timestamp: Long
+    )
+    private val nearbyScannedBleDevices = ConcurrentHashMap<String, ScannedDeviceInfo>()
+
     /** The full AlertNet identity string served via GATT */
     private val identityPayload: String
         get() = "${BleConstants.IDENTITY_PREFIX}:$deviceId:$username"
@@ -322,13 +333,20 @@ class BleTransport(
         // so scanners can pre-filter before doing a full GATT read
         val idPrefix = deviceId.take(8).toByteArray(Charsets.UTF_8)
 
+        // Split advertisement packet (<= 31 bytes each) into main data and scan response
+        // Main data: MESH_SERVICE_UUID (18 bytes <= 31 bytes)
         val data = AdvertiseData.Builder()
             .setIncludeDeviceName(false) // save space
             .addServiceUuid(ParcelUuid(BleConstants.MESH_SERVICE_UUID))
+            .build()
+
+        // Scan response: Service Data with ID prefix (26 bytes <= 31 bytes)
+        val scanResponse = AdvertiseData.Builder()
+            .setIncludeDeviceName(false)
             .addServiceData(ParcelUuid(BleConstants.MESH_SERVICE_UUID), idPrefix)
             .build()
 
-        bleAdvertiser?.startAdvertising(settings, data, advertiseCallback)
+        bleAdvertiser?.startAdvertising(settings, data, scanResponse, advertiseCallback)
         Log.d(TAG, "BLE advertising started with ID prefix: ${deviceId.take(8)}")
     }
 
@@ -374,35 +392,48 @@ class BleTransport(
         Log.d(TAG, "BLE discovery stopped (externally controlled)")
     }
 
+    @Volatile
+    private var isScanning = false
+
     @SuppressLint("MissingPermission")
     private fun startScan() {
-        if (!hasPermissions() || bleScanner == null) return
+        if (!hasPermissions() || bleScanner == null || isScanning) return
 
         val filters = listOf(
             ScanFilter.Builder()
                 .setServiceUuid(ParcelUuid(BleConstants.MESH_SERVICE_UUID))
+                .build(),
+            ScanFilter.Builder()
+                .setServiceUuid(ParcelUuid(BleConstants.SOS_SERVICE_UUID_16))
+                .build(),
+            ScanFilter.Builder()
+                .setManufacturerData(BleConstants.SOS_MANUFACTURER_ID, null)
                 .build()
         )
 
         val settings = ScanSettings.Builder()
-            .setScanMode(ScanSettings.SCAN_MODE_LOW_POWER)
+            .setScanMode(ScanSettings.SCAN_MODE_BALANCED)
             .build()
 
         try {
             bleScanner?.startScan(filters, settings, scanCallback)
-            Log.d(TAG, "BLE scan started")
+            isScanning = true
+            Log.d(TAG, "BLE scan started (BALANCED mode with SOS filters)")
         } catch (e: Exception) {
+            isScanning = false
             Log.e(TAG, "Failed to start BLE scan", e)
         }
     }
 
     @SuppressLint("MissingPermission")
     private fun stopScan() {
-        if (!hasPermissions()) return
+        if (!hasPermissions() || !isScanning) return
         try {
             bleScanner?.stopScan(scanCallback)
         } catch (e: Exception) {
             Log.e(TAG, "Failed to stop BLE scan", e)
+        } finally {
+            isScanning = false
         }
     }
 
@@ -424,26 +455,56 @@ class BleTransport(
             val device = result.device ?: return
             val address = device.address ?: return
 
-            // Check for service data — if present, extract the ID prefix
-            val serviceData = result.scanRecord?.getServiceData(
-                ParcelUuid(BleConstants.MESH_SERVICE_UUID)
-            )
-
-            if (serviceData != null) {
-                val serviceDataStr = String(serviceData, Charsets.UTF_8)
-                if (serviceDataStr.startsWith("SOS:")) {
-                    handleIncomingSosBeacon(address, serviceDataStr, result.rssi)
-                    return
-                }
-                val idPrefix = serviceDataStr
-                Log.d(TAG, "AlertNet candidate: $address (prefix: $idPrefix, RSSI: ${result.rssi})")
+            // Record this device as seen recently within 15m radius for direct GATT delivery
+            if (SosDistanceHelper.isWithin15Meters(null, null, null, null, result.rssi)) {
+                nearbyScannedBleDevices[address] = ScannedDeviceInfo(device, result.rssi, System.currentTimeMillis())
             }
 
-            // Check if we already know this peer's AlertNet identity
+            // Check if this advertisement contains an SOS emergency beacon
+            val serviceData = result.scanRecord?.getServiceData(ParcelUuid(BleConstants.MESH_SERVICE_UUID))
+                ?: result.scanRecord?.getServiceData(ParcelUuid(BleConstants.SOS_SERVICE_UUID_16))
+            val mfgData = result.scanRecord?.getManufacturerSpecificData(BleConstants.SOS_MANUFACTURER_ID)
+
+            var sosPayload: String? = null
+            if (mfgData != null) {
+                val str = String(mfgData, Charsets.UTF_8)
+                if (str.startsWith("SOS:")) {
+                    sosPayload = str
+                }
+            }
+            if (sosPayload == null && serviceData != null) {
+                val str = String(serviceData, Charsets.UTF_8)
+                if (str.startsWith("SOS:")) {
+                    sosPayload = str
+                }
+            }
+            if (sosPayload == null) {
+                // Check raw advertisement bytes for SOS: pattern
+                val rawBytes = result.scanRecord?.bytes
+                if (rawBytes != null) {
+                    val rawStr = String(rawBytes, Charsets.ISO_8859_1)
+                    val idx = rawStr.indexOf("SOS:")
+                    if (idx != -1) {
+                        sosPayload = rawStr.substring(idx).takeWhile { it.code in 32..126 }
+                    }
+                }
+            }
+
+            if (sosPayload != null) {
+                handleIncomingSosBeacon(address, sosPayload, result.rssi)
+                return
+            }
+
+            if (serviceData != null) {
+                val idPrefix = String(serviceData, Charsets.UTF_8)
+                Log.d(TAG, "BridgeFy candidate: $address (prefix: $idPrefix, RSSI: ${result.rssi})")
+            }
+
+            // Check if we already know this peer's identity
             val existingByMac = peersMap.values.find { it.macAddress == address }
-            if (existingByMac?.alertnetId != null) {
+            if (existingByMac?.bridgefyId != null || existingByMac?.alertnetId != null) {
                 // Already identified — just update RSSI and lastSeen
-                val key = existingByMac.alertnetId!!
+                val key = existingByMac.bridgefyId ?: existingByMac.alertnetId!!
                 peersMap[key] = existingByMac.copy(
                     rssi = result.rssi,
                     lastSeen = System.currentTimeMillis()
@@ -594,6 +655,68 @@ class BleTransport(
     // ─── Send Message ───────────────────────────────────────────
 
     @SuppressLint("MissingPermission")
+    suspend fun sendDataToRemoteDevice(device: BluetoothDevice, data: ByteArray): Boolean {
+        if (!hasPermissions()) return false
+        val result = CompletableDeferred<Boolean>()
+
+        val gatt = device.connectGatt(context, false, object : BluetoothGattCallback() {
+            override fun onConnectionStateChange(gatt: BluetoothGatt, status: Int, newState: Int) {
+                if (newState == BluetoothProfile.STATE_CONNECTED) {
+                    gatt.requestMtu(BleConstants.REQUESTED_MTU)
+                } else {
+                    if (!result.isCompleted) result.complete(false)
+                    gatt.close()
+                }
+            }
+
+            override fun onMtuChanged(gatt: BluetoothGatt, mtu: Int, status: Int) {
+                if (status == BluetoothGatt.GATT_SUCCESS) {
+                    gatt.discoverServices()
+                } else {
+                    if (!result.isCompleted) result.complete(false)
+                    gatt.close()
+                }
+            }
+
+            override fun onServicesDiscovered(gatt: BluetoothGatt, status: Int) {
+                if (status != BluetoothGatt.GATT_SUCCESS) {
+                    if (!result.isCompleted) result.complete(false)
+                    gatt.close()
+                    return
+                }
+
+                val service = gatt.getService(BleConstants.MESH_SERVICE_UUID)
+                val characteristic = service?.getCharacteristic(BleConstants.MESSAGE_CHARACTERISTIC)
+
+                if (characteristic == null) {
+                    Log.d(TAG, "Message characteristic not found on device ${device.address}")
+                    if (!result.isCompleted) result.complete(false)
+                    gatt.close()
+                    return
+                }
+
+                characteristic.value = data
+                val writeResult = gatt.writeCharacteristic(characteristic)
+                if (!writeResult) {
+                    if (!result.isCompleted) result.complete(false)
+                    gatt.close()
+                }
+            }
+
+            override fun onCharacteristicWrite(
+                gatt: BluetoothGatt,
+                characteristic: BluetoothGattCharacteristic,
+                status: Int
+            ) {
+                result.complete(status == BluetoothGatt.GATT_SUCCESS)
+                gatt.close()
+            }
+        })
+
+        return withTimeoutOrNull(3_000) { result.await() } ?: false
+    }
+
+    @SuppressLint("MissingPermission")
     override suspend fun sendMessage(peerId: String, data: ByteArray): Boolean {
         if (!hasPermissions()) return false
 
@@ -604,74 +727,18 @@ class BleTransport(
 
         return withContext(Dispatchers.IO) {
             try {
-                val peer = peersMap[peerId] ?: run {
-                    Log.w(TAG, "Peer not found: $peerId")
-                    return@withContext false
-                }
+                // Find peer by AlertNet ID, deviceId, or MAC address
+                val peer = peersMap[peerId]
+                    ?: peersMap.values.find { it.macAddress == peerId || it.deviceId == peerId || it.bridgefyId == peerId }
+                val macAddress = peer?.macAddress ?: if (peerId.contains(":")) peerId else null
 
-                val macAddress = peer.macAddress ?: run {
+                if (macAddress == null) {
                     Log.w(TAG, "No MAC address for peer: $peerId")
                     return@withContext false
                 }
 
                 val device = bluetoothAdapter?.getRemoteDevice(macAddress) ?: return@withContext false
-                val result = CompletableDeferred<Boolean>()
-
-                val gatt = device.connectGatt(context, false, object : BluetoothGattCallback() {
-                    override fun onConnectionStateChange(gatt: BluetoothGatt, status: Int, newState: Int) {
-                        if (newState == BluetoothProfile.STATE_CONNECTED) {
-                            gatt.requestMtu(BleConstants.REQUESTED_MTU)
-                        } else {
-                            if (!result.isCompleted) result.complete(false)
-                            gatt.close()
-                        }
-                    }
-
-                    override fun onMtuChanged(gatt: BluetoothGatt, mtu: Int, status: Int) {
-                        if (status == BluetoothGatt.GATT_SUCCESS) {
-                            gatt.discoverServices()
-                        } else {
-                            if (!result.isCompleted) result.complete(false)
-                            gatt.close()
-                        }
-                    }
-
-                    override fun onServicesDiscovered(gatt: BluetoothGatt, status: Int) {
-                        if (status != BluetoothGatt.GATT_SUCCESS) {
-                            if (!result.isCompleted) result.complete(false)
-                            gatt.close()
-                            return
-                        }
-
-                        val service = gatt.getService(BleConstants.MESH_SERVICE_UUID)
-                        val characteristic = service?.getCharacteristic(BleConstants.MESSAGE_CHARACTERISTIC)
-
-                        if (characteristic == null) {
-                            Log.e(TAG, "Message characteristic not found on peer")
-                            if (!result.isCompleted) result.complete(false)
-                            gatt.close()
-                            return
-                        }
-
-                        characteristic.value = data
-                        val writeResult = gatt.writeCharacteristic(characteristic)
-                        if (!writeResult) {
-                            if (!result.isCompleted) result.complete(false)
-                            gatt.close()
-                        }
-                    }
-
-                    override fun onCharacteristicWrite(
-                        gatt: BluetoothGatt,
-                        characteristic: BluetoothGattCharacteristic,
-                        status: Int
-                    ) {
-                        result.complete(status == BluetoothGatt.GATT_SUCCESS)
-                        gatt.close()
-                    }
-                })
-
-                withTimeoutOrNull(3_000) { result.await() } ?: false
+                sendDataToRemoteDevice(device, data)
             } catch (e: Exception) {
                 Log.e(TAG, "BLE send failed", e)
                 false
@@ -697,8 +764,11 @@ class BleTransport(
 
     /**
      * Broadcast an emergency SOS to all nearby devices strictly within the 15-meter radius.
-     * 1. Broadcasts high-priority connectionless BLE SOS beacon packets.
+     * 1. Broadcasts high-priority connectionless BLE SOS beacon packets (reaches ALL nearby devices,
+     *    connected or unconnected, without requiring pairing or connection).
      * 2. Direct parallel BLE GATT writes to all nearby discovered peers within 15 meters.
+     * 3. Direct parallel BLE GATT writes to all recently scanned nearby devices within 15 meters
+     *    (even if not yet connected or in peersMap).
      */
     suspend fun broadcastSOS(
         data: ByteArray,
@@ -734,6 +804,25 @@ class BleTransport(
                 }
             }
         }
+
+        // 3. Direct parallel BLE GATT writes to all recently scanned nearby devices within 15m (unconnected/unpaired)
+        val now = System.currentTimeMillis()
+        val targetedMacs = targetsWithin15m.mapNotNull { it.macAddress }.toSet()
+        val scannedWithin15m = nearbyScannedBleDevices.values
+            .filter { (now - it.timestamp) < 60_000L } // detected in the last 60 seconds
+            .filter { it.device.address !in targetedMacs && it.device.address !in excludePeers }
+            .filter { SosDistanceHelper.isWithin15Meters(null, null, null, null, it.rssi) }
+
+        Log.d(TAG, "Broadcasting direct BLE SOS to ${scannedWithin15m.size} unconnected nearby scanned devices")
+        for (scanned in scannedWithin15m) {
+            scope.launch {
+                try {
+                    sendDataToRemoteDevice(scanned.device, data)
+                } catch (e: Exception) {
+                    Log.d(TAG, "Direct GATT write to unconnected device ${scanned.device.address} failed: ${e.message}")
+                }
+            }
+        }
     }
 
     @SuppressLint("MissingPermission")
@@ -742,38 +831,73 @@ class BleTransport(
 
         scope.launch {
             try {
+                // Pause standard background advertisement to prevent collision on single-instance BLE advertisers
+                try {
+                    bleAdvertiser?.stopAdvertising(advertiseCallback)
+                } catch (_: Exception) {}
+
                 val sosSettings = AdvertiseSettings.Builder()
                     .setAdvertiseMode(AdvertiseSettings.ADVERTISE_MODE_LOW_LATENCY)
                     .setTxPowerLevel(AdvertiseSettings.ADVERTISE_TX_POWER_HIGH)
                     .setConnectable(true)
                     .build()
 
-                val payloadText = "SOS:${deviceId.take(6)}"
+                // Compact payload format for legacy 31-byte BLE advertising:
+                // Primary packet: 16-bit SOS Service UUID (4 bytes) + Mfg Data with sender ID (14 bytes) = 18 bytes <= 31 bytes
+                val shortId = deviceId.take(6)
                 val sosData = AdvertiseData.Builder()
                     .setIncludeDeviceName(false)
-                    .addServiceUuid(ParcelUuid(BleConstants.MESH_SERVICE_UUID))
-                    .addServiceData(
-                        ParcelUuid(BleConstants.MESH_SERVICE_UUID),
-                        payloadText.toByteArray(Charsets.UTF_8)
+                    .addServiceUuid(ParcelUuid(BleConstants.SOS_SERVICE_UUID_16))
+                    .addManufacturerData(
+                        BleConstants.SOS_MANUFACTURER_ID,
+                        "SOS:$shortId".toByteArray(Charsets.UTF_8)
                     )
                     .build()
 
+                // Scan response: If GPS location is available, include coordinates in scan response
+                val scanResponseBuilder = AdvertiseData.Builder().setIncludeDeviceName(false)
+                if (lat != null && lon != null) {
+                    val locStr = String.format(java.util.Locale.US, "SOS:%s:%.3f,%.3f", shortId, lat, lon)
+                    scanResponseBuilder.addManufacturerData(
+                        BleConstants.SOS_MANUFACTURER_ID,
+                        locStr.toByteArray(Charsets.UTF_8)
+                    )
+                } else {
+                    scanResponseBuilder.addServiceData(
+                        ParcelUuid(BleConstants.SOS_SERVICE_UUID_16),
+                        "SOS:$shortId".toByteArray(Charsets.UTF_8)
+                    )
+                }
+                val sosScanResponse = scanResponseBuilder.build()
+
                 val sosCallback = object : AdvertiseCallback() {
                     override fun onStartSuccess(settingsInEffect: AdvertiseSettings) {
-                        Log.d(TAG, "Emergency BLE SOS beacon advertising active")
+                        Log.d(TAG, "Emergency BLE SOS beacon active (low latency, high power)")
                     }
                     override fun onStartFailure(errorCode: Int) {
                         Log.e(TAG, "Emergency BLE SOS beacon failed: $errorCode")
                     }
                 }
 
-                bleAdvertiser?.startAdvertising(sosSettings, sosData, sosCallback)
-                delay(25_000L)
+                bleAdvertiser?.startAdvertising(sosSettings, sosData, sosScanResponse, sosCallback)
+                Log.d(TAG, "Started emergency BLE SOS beacon broadcast")
+
+                // Keep high-priority SOS beacon active for 30 seconds
+                delay(30_000L)
+
                 try {
                     bleAdvertiser?.stopAdvertising(sosCallback)
                 } catch (_: Exception) {}
+
+                // Resume standard advertising if transport is still running
+                if (isRunning) {
+                    startAdvertising()
+                }
             } catch (e: Exception) {
                 Log.e(TAG, "Failed in broadcastSosBeacon", e)
+                if (isRunning) {
+                    startAdvertising()
+                }
             }
         }
     }
@@ -785,24 +909,44 @@ class BleTransport(
             return
         }
 
-        val senderShortId = dataStr.removePrefix("SOS:").take(6)
+        val parts = dataStr.removePrefix("SOS:").split(":")
+        val senderShortId = parts.getOrNull(0)?.take(8) ?: "UNKNOWN"
+        var lat: Double? = null
+        var lon: Double? = null
+        if (parts.size >= 2) {
+            val coords = parts[1].split(",")
+            if (coords.size == 2) {
+                lat = coords[0].toDoubleOrNull()
+                lon = coords[1].toDoubleOrNull()
+            }
+        }
+
         val now = System.currentTimeMillis()
-        val lastSeen = recentSosBeacons[senderShortId] ?: 0L
-        if (now - lastSeen < 15_000L) {
-            // Deduplicate within 15 seconds
+        val dedupKey = "$macAddress:$senderShortId"
+        val lastSeen = recentSosBeacons[dedupKey] ?: 0L
+        if (now - lastSeen < 10_000L) {
+            // Deduplicate within 10 seconds
             return
         }
-        recentSosBeacons[senderShortId] = now
+        recentSosBeacons[dedupKey] = now
 
         val distanceEst = SosDistanceHelper.estimateBleDistance(rssi)
         val approxMeters = distanceEst.roundToInt().coerceAtLeast(1)
+
+        val sosPayload = buildString {
+            append("🆘 SOS — HELP ME!\n")
+            append("Proximity: ~${approxMeters}m away (within 15m radius, Signal: ${rssi} dBm)")
+            if (lat != null && lon != null) {
+                append("\nLocation: $lat, $lon")
+            }
+        }
 
         val sosMessage = MeshMessage(
             id = UUID.randomUUID().toString(),
             senderId = senderShortId,
             targetId = null,
             type = MessageType.SOS,
-            payload = "🆘 SOS — HELP ME!\nProximity: ~${approxMeters}m away (within 15m radius, Signal: ${rssi} dBm)",
+            payload = sosPayload,
             timestamp = now,
             ttl = 1,
             hopCount = 0,

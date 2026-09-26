@@ -18,12 +18,10 @@ object SosDistanceHelper {
 
     /**
      * Empirical BLE RSSI cutoff corresponding to ~15 meters in typical environments.
-     * Based on log-distance path loss model:
-     * RSSI = TxPower(1m) - 10 * n * log10(d)
-     * For TxPower = -59 dBm and path loss exponent n = 2.4, d = 15m => RSSI ~= -86.5 dBm.
-     * Devices with RSSI >= -86 dBm are within the 15-meter zone.
+     * Incorporates environmental fading, multipath, and human body shadowing.
+     * Devices with RSSI >= -92 dBm are within the 15-meter zone.
      */
-    const val BLE_15M_RSSI_THRESHOLD = -86
+    const val BLE_15M_RSSI_THRESHOLD = -92
 
     /**
      * Estimate physical distance in meters from Bluetooth Low Energy RSSI.
@@ -54,11 +52,11 @@ object SosDistanceHelper {
     }
 
     /**
-     * Determines whether a target device is within the strict 15-meter SOS radius.
+     * Determines whether a target device is within the 15-meter SOS radius.
      *
      * Evaluation order:
-     * 1. Exact GPS distance if both sender and peer coordinates are known.
-     * 2. BLE RSSI signal strength threshold if Bluetooth proximity is available.
+     * 1. Exact GPS distance if both sender and peer coordinates are known (includes 5m GPS jitter margin).
+     * 2. BLE RSSI signal strength threshold (>= -92 dBm or distance model <= 18m).
      * 3. Fallback to direct connected status if within immediate short-range Wi-Fi Direct.
      */
     fun isWithin15Meters(
@@ -69,15 +67,15 @@ object SosDistanceHelper {
         rssi: Int?,
         isDirectlyConnected: Boolean = false
     ): Boolean {
-        // Priority 1: Exact GPS comparison
+        // Priority 1: Exact GPS comparison with 5m sensor inaccuracy tolerance
         if (peerLat != null && peerLon != null && myLat != null && myLon != null) {
             val dist = calculateGpsDistance(myLat, myLon, peerLat, peerLon)
-            return dist <= MAX_SOS_RADIUS_METERS
+            return dist <= (MAX_SOS_RADIUS_METERS + 5.0)
         }
 
         // Priority 2: BLE RSSI attenuation
         if (rssi != null) {
-            return rssi >= BLE_15M_RSSI_THRESHOLD || estimateBleDistance(rssi) <= MAX_SOS_RADIUS_METERS
+            return rssi >= BLE_15M_RSSI_THRESHOLD || estimateBleDistance(rssi) <= (MAX_SOS_RADIUS_METERS + 3.0)
         }
 
         // Priority 3: Direct 1-hop connected device without known GPS/RSSI

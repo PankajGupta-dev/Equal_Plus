@@ -56,4 +56,10 @@ object BleConstants {
 
     /** Maximum payload size for BLE transport (after MTU overhead) */
     const val MAX_BLE_PAYLOAD = 500
+
+    /** 16-bit short UUID for compact SOS broadcast advertisement packets (fits in legacy 31-byte BLE frame) */
+    val SOS_SERVICE_UUID_16: UUID = UUID.fromString("0000bf01-0000-1000-8000-00805f9b34fb")
+
+    /** Manufacturer ID used for connectionless SOS broadcasts: 0xBFBF (BridgeFy) */
+    const val SOS_MANUFACTURER_ID = 0xBFBF
 }

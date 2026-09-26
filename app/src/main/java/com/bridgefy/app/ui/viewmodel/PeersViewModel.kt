@@ -117,24 +117,37 @@ class PeersViewModel(
         _sosSending.value = true
 
         if (fusedClient != null) {
-            // Try to get current location for SOS
-            fusedClient.getCurrentLocation(
-                Priority.PRIORITY_HIGH_ACCURACY,
-                CancellationTokenSource().token
-            ).addOnSuccessListener { location ->
-                viewModelScope.launch {
-                    meshManager.sendSOS(location?.latitude, location?.longitude)
-                    _sosSending.value = false
+            // Try fast cached location first for instant SOS broadcast
+            fusedClient.lastLocation.addOnSuccessListener { lastLoc ->
+                if (lastLoc != null) {
+                    viewModelScope.launch {
+                        meshManager.sendSOS(lastLoc.latitude, lastLoc.longitude)
+                        _sosSending.value = false
+                    }
+                } else {
+                    fusedClient.getCurrentLocation(
+                        Priority.PRIORITY_HIGH_ACCURACY,
+                        CancellationTokenSource().token
+                    ).addOnSuccessListener { location ->
+                        viewModelScope.launch {
+                            meshManager.sendSOS(location?.latitude, location?.longitude)
+                            _sosSending.value = false
+                        }
+                    }.addOnFailureListener {
+                        viewModelScope.launch {
+                            meshManager.sendSOS(null, null)
+                            _sosSending.value = false
+                        }
+                    }
                 }
             }.addOnFailureListener {
-                // Send SOS without location
                 viewModelScope.launch {
                     meshManager.sendSOS(null, null)
                     _sosSending.value = false
                 }
             }
         } else {
-            // No location client — send without coordinates
+            // No location client — send without coordinates immediately
             viewModelScope.launch {
                 meshManager.sendSOS(null, null)
                 _sosSending.value = false

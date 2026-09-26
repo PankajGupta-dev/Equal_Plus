@@ -286,6 +286,100 @@ fun NavGraph(app: BridgeFyApplication) {
         }
     }
 
+    // ─── Global Incoming SOS Alert (<15m) ───────────────────────
+    var globalSosAlert by remember { mutableStateOf<MeshMessage?>(null) }
+
+    LaunchedEffect(Unit) {
+        app.meshManager.incomingSOS.collect { message ->
+            // Decrypt the payload for display
+            val decrypted = try {
+                val key = KeyManager.getKey(context)
+                if (key != null) {
+                    CryptoManager.decryptString(message.payload, key) ?: message.payload
+                } else {
+                    message.payload
+                }
+            } catch (_: Exception) {
+                message.payload
+            }
+
+            // Fire system notification with alarm sound & vibration
+            fireSOSNotification(context, message.senderId, decrypted)
+
+            // Show in-app alert dialog regardless of which screen is currently visible
+            globalSosAlert = message.copy(payload = decrypted)
+        }
+    }
+
+    // Global SOS Received Alert Dialog
+    globalSosAlert?.let { msg ->
+        AlertDialog(
+            onDismissRequest = { globalSosAlert = null },
+            containerColor = SurfaceCard,
+            icon = {
+                Icon(
+                    imageVector = Icons.Default.Warning,
+                    contentDescription = null,
+                    tint = StatusFailed,
+                    modifier = Modifier.size(56.dp)
+                )
+            },
+            title = {
+                Text(
+                    "🆘 SOS ALERT",
+                    fontWeight = FontWeight.ExtraBold,
+                    fontSize = 22.sp,
+                    color = StatusFailed
+                )
+            },
+            text = {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = "From: ${msg.senderId.take(8)}… • Within 15m Radius",
+                        color = StatusFailed,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text(
+                        text = msg.payload,
+                        color = TextPrimary,
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Medium,
+                        textAlign = TextAlign.Center,
+                        lineHeight = 22.sp
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val regex = Regex("""Location:\s*([-\d.]+)\s*,\s*([-\d.]+)""")
+                        val match = regex.find(msg.payload)
+                        val lat = match?.groupValues?.getOrNull(1)
+                        val lon = match?.groupValues?.getOrNull(2)
+                        globalSosAlert = null
+                        if (lat != null && lon != null) {
+                            navController.navigate(
+                                "mesh_map?focusLat=$lat&focusLon=$lon&pinType=${msg.senderId}"
+                            )
+                        } else {
+                            navController.navigate("mesh_map")
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = StatusFailed
+                    )
+                ) {
+                    Text("ACKNOWLEDGED", fontWeight = FontWeight.Bold)
+                }
+            }
+        )
+    }
+
     NavHost(
         navController = navController,
         startDestination = "peers"
@@ -305,100 +399,6 @@ fun NavGraph(app: BridgeFyApplication) {
             // Fused location client for SOS GPS
             val fusedClient = remember {
                 LocationServices.getFusedLocationProviderClient(context)
-            }
-
-            // ─── Incoming SOS Alert ──────────────────────────────
-            var sosAlert by remember { mutableStateOf<MeshMessage?>(null) }
-
-            LaunchedEffect(Unit) {
-                viewModel.incomingSOS.collect { message ->
-                    // Decrypt the payload for display
-                    val decrypted = try {
-                        val key = KeyManager.getKey(context)
-                        if (key != null) {
-                            CryptoManager.decryptString(message.payload, key) ?: message.payload
-                        } else {
-                            message.payload
-                        }
-                    } catch (_: Exception) {
-                        message.payload
-                    }
-
-                    // Fire system notification
-                    fireSOSNotification(context, message.senderId, decrypted)
-
-                    // Show in-app alert
-                    sosAlert = message.copy(payload = decrypted)
-                }
-            }
-
-            // SOS Received Alert Dialog
-            sosAlert?.let { msg ->
-                AlertDialog(
-                    onDismissRequest = { sosAlert = null },
-                    containerColor = SurfaceCard,
-                    icon = {
-                        Icon(
-                            imageVector = Icons.Default.Warning,
-                            contentDescription = null,
-                            tint = StatusFailed,
-                            modifier = Modifier.size(56.dp)
-                        )
-                    },
-                    title = {
-                        Text(
-                            "🆘 SOS ALERT",
-                            fontWeight = FontWeight.ExtraBold,
-                            fontSize = 22.sp,
-                            color = StatusFailed
-                        )
-                    },
-                    text = {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Text(
-                                text = "From: ${msg.senderId.take(8)}… • Within 15m Radius",
-                                color = StatusFailed,
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Spacer(modifier = Modifier.height(12.dp))
-                            Text(
-                                text = msg.payload,
-                                color = TextPrimary,
-                                fontSize = 16.sp,
-                                fontWeight = FontWeight.Medium,
-                                textAlign = TextAlign.Center,
-                                lineHeight = 22.sp
-                            )
-                        }
-                    },
-                    confirmButton = {
-                        Button(
-                            onClick = {
-                                val regex = Regex("""Location:\s*([-\d.]+)\s*,\s*([-\d.]+)""")
-                                val match = regex.find(msg.payload)
-                                val lat = match?.groupValues?.getOrNull(1)
-                                val lon = match?.groupValues?.getOrNull(2)
-                                sosAlert = null
-                                if (lat != null && lon != null) {
-                                    navController.navigate(
-                                        "mesh_map?focusLat=$lat&focusLon=$lon&pinType=${msg.senderId}"
-                                    )
-                                } else {
-                                    navController.navigate("mesh_map")
-                                }
-                            },
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = StatusFailed
-                            )
-                        ) {
-                            Text("ACKNOWLEDGED", fontWeight = FontWeight.Bold)
-                        }
-                    }
-                )
             }
 
             PeersScreen(
