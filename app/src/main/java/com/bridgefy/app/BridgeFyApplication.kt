@@ -69,6 +69,9 @@ class BridgeFyApplication : Application() {
         settingsRepository = SettingsRepository(this, deviceId)
         voiceCallManager = VoiceCallManager(this, deviceId, meshManager, transportManager.wifiDirectTransport)
 
+        // Initialize 100% offline map tile manager
+        com.bridgefy.app.map.OfflineMapManager.init(this)
+
         Log.d(TAG, "BridgeFy initialized")
     }
 

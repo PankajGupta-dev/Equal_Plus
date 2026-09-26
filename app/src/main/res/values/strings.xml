@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">BridgeFy</string>
+    <string name="mapbox_access_token">offline_token_bridgefy</string>
 </resources>

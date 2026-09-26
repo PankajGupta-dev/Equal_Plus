@@ -61,8 +61,7 @@ fun ChatScreen(
     locationShareViewModel: LocationShareViewModel? = null,
     onBack: () -> Unit,
     onViewOnMap: ((Double, Double) -> Unit)? = null,
-    onInitiateCall: () -> Unit = {},
-    onInitiateVideoCall: () -> Unit = {}
+    onInitiateCall: () -> Unit = {}
 ) {
     var viewMode by remember { mutableStateOf(ChatViewMode.CHAT) }
     var capturedUri by remember { mutableStateOf<Uri?>(null) }
@@ -107,16 +106,6 @@ fun ChatScreen(
     ) { granted ->
         if (granted) {
             onInitiateCall()
-        }
-    }
-
-    val videoCallPermissionLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestMultiplePermissions()
-    ) { permissions ->
-        val recordAudioGranted = permissions[Manifest.permission.RECORD_AUDIO] ?: false
-        val cameraGranted = permissions[Manifest.permission.CAMERA] ?: false
-        if (recordAudioGranted && cameraGranted) {
-            onInitiateVideoCall()
         }
     }
 
@@ -252,17 +241,6 @@ fun ChatScreen(
                                 Icon(
                                     imageVector = Icons.Default.Phone,
                                     contentDescription = "Voice Call",
-                                    tint = TextPrimary
-                                )
-                            }
-                            IconButton(onClick = {
-                                videoCallPermissionLauncher.launch(
-                                    arrayOf(Manifest.permission.RECORD_AUDIO, Manifest.permission.CAMERA)
-                                )
-                            }) {
-                                Icon(
-                                    imageVector = Icons.Default.Videocam,
-                                    contentDescription = "Video Call",
                                     tint = TextPrimary
                                 )
                             }

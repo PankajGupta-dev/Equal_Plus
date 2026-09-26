@@ -10,14 +10,22 @@ import android.os.Build
 import android.os.ParcelUuid
 import android.util.Log
 import androidx.core.app.ActivityCompat
+import com.bridgefy.app.mesh.SosDistanceHelper
+import com.bridgefy.app.model.DeliveryStatus
+import com.bridgefy.app.model.MeshMessage
 import com.bridgefy.app.model.MeshPeer
+import com.bridgefy.app.model.MessageType
 import com.bridgefy.app.model.TransportType
 import com.bridgefy.app.transport.ConnectionEvent
 import com.bridgefy.app.transport.Transport
 import com.bridgefy.app.transport.TransportMessage
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
+import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
+import kotlin.math.roundToInt
 
 /**
  * BLE transport implementation for AlertNet mesh.
@@ -74,6 +82,9 @@ class BleTransport(
      * preventing duplicate connections to the same device during a scan window.
      */
     private val pendingIdentityReads = ConcurrentHashMap.newKeySet<String>()
+
+    private val json = Json { ignoreUnknownKeys = true }
+    private val recentSosBeacons = ConcurrentHashMap<String, Long>()
 
     /** The full AlertNet identity string served via GATT */
     private val identityPayload: String
@@ -419,7 +430,12 @@ class BleTransport(
             )
 
             if (serviceData != null) {
-                val idPrefix = String(serviceData, Charsets.UTF_8)
+                val serviceDataStr = String(serviceData, Charsets.UTF_8)
+                if (serviceDataStr.startsWith("SOS:")) {
+                    handleIncomingSosBeacon(address, serviceDataStr, result.rssi)
+                    return
+                }
+                val idPrefix = serviceDataStr
                 Log.d(TAG, "AlertNet candidate: $address (prefix: $idPrefix, RSSI: ${result.rssi})")
             }
 
@@ -669,10 +685,145 @@ class BleTransport(
             .distinctBy { it.macAddress }
 
         for (peer in targets) {
+            scope.launch {
+                try {
+                    sendMessage(peer.deviceId, data)
+                } catch (e: Exception) {
+                    Log.e(TAG, "Broadcast to ${peer.deviceId} failed", e)
+                }
+            }
+        }
+    }
+
+    /**
+     * Broadcast an emergency SOS to all nearby devices strictly within the 15-meter radius.
+     * 1. Broadcasts high-priority connectionless BLE SOS beacon packets.
+     * 2. Direct parallel BLE GATT writes to all nearby discovered peers within 15 meters.
+     */
+    suspend fun broadcastSOS(
+        data: ByteArray,
+        lat: Double?,
+        lon: Double?,
+        excludePeers: Set<String> = emptySet()
+    ) {
+        // 1. Connectionless BLE SOS Beacon Advertising (reaches all devices in 15m radius immediately)
+        broadcastSosBeacon(lat, lon)
+
+        // 2. Filter target peers to only those within 15 meters
+        val targetsWithin15m = peersMap.values
+            .filter { it.deviceId !in excludePeers && it.macAddress !in excludePeers }
+            .filter { peer ->
+                SosDistanceHelper.isWithin15Meters(
+                    peerLat = peer.latitude,
+                    peerLon = peer.longitude,
+                    myLat = lat,
+                    myLon = lon,
+                    rssi = peer.rssi,
+                    isDirectlyConnected = peer.isConnected
+                )
+            }
+            .distinctBy { it.macAddress ?: it.deviceId }
+
+        Log.d(TAG, "Broadcasting direct BLE SOS to ${targetsWithin15m.size} peers within 15m radius")
+        for (peer in targetsWithin15m) {
+            scope.launch {
+                try {
+                    sendMessage(peer.deviceId, data)
+                } catch (e: Exception) {
+                    Log.e(TAG, "Direct BLE SOS to ${peer.deviceId} failed", e)
+                }
+            }
+        }
+    }
+
+    @SuppressLint("MissingPermission")
+    fun broadcastSosBeacon(lat: Double?, lon: Double?) {
+        if (!hasPermissions() || bleAdvertiser == null) return
+
+        scope.launch {
             try {
-                sendMessage(peer.deviceId, data)
+                val sosSettings = AdvertiseSettings.Builder()
+                    .setAdvertiseMode(AdvertiseSettings.ADVERTISE_MODE_LOW_LATENCY)
+                    .setTxPowerLevel(AdvertiseSettings.ADVERTISE_TX_POWER_HIGH)
+                    .setConnectable(true)
+                    .build()
+
+                val payloadText = "SOS:${deviceId.take(6)}"
+                val sosData = AdvertiseData.Builder()
+                    .setIncludeDeviceName(false)
+                    .addServiceUuid(ParcelUuid(BleConstants.MESH_SERVICE_UUID))
+                    .addServiceData(
+                        ParcelUuid(BleConstants.MESH_SERVICE_UUID),
+                        payloadText.toByteArray(Charsets.UTF_8)
+                    )
+                    .build()
+
+                val sosCallback = object : AdvertiseCallback() {
+                    override fun onStartSuccess(settingsInEffect: AdvertiseSettings) {
+                        Log.d(TAG, "Emergency BLE SOS beacon advertising active")
+                    }
+                    override fun onStartFailure(errorCode: Int) {
+                        Log.e(TAG, "Emergency BLE SOS beacon failed: $errorCode")
+                    }
+                }
+
+                bleAdvertiser?.startAdvertising(sosSettings, sosData, sosCallback)
+                delay(25_000L)
+                try {
+                    bleAdvertiser?.stopAdvertising(sosCallback)
+                } catch (_: Exception) {}
             } catch (e: Exception) {
-                Log.e(TAG, "Broadcast to ${peer.deviceId} failed", e)
+                Log.e(TAG, "Failed in broadcastSosBeacon", e)
+            }
+        }
+    }
+
+    private fun handleIncomingSosBeacon(macAddress: String, dataStr: String, rssi: Int) {
+        // Enforce 15-meter radius constraint
+        if (!SosDistanceHelper.isWithin15Meters(null, null, null, null, rssi)) {
+            Log.d(TAG, "Ignoring SOS beacon from $macAddress (RSSI $rssi is beyond 15m)")
+            return
+        }
+
+        val senderShortId = dataStr.removePrefix("SOS:").take(6)
+        val now = System.currentTimeMillis()
+        val lastSeen = recentSosBeacons[senderShortId] ?: 0L
+        if (now - lastSeen < 15_000L) {
+            // Deduplicate within 15 seconds
+            return
+        }
+        recentSosBeacons[senderShortId] = now
+
+        val distanceEst = SosDistanceHelper.estimateBleDistance(rssi)
+        val approxMeters = distanceEst.roundToInt().coerceAtLeast(1)
+
+        val sosMessage = MeshMessage(
+            id = UUID.randomUUID().toString(),
+            senderId = senderShortId,
+            targetId = null,
+            type = MessageType.SOS,
+            payload = "🆘 SOS — HELP ME!\nProximity: ~${approxMeters}m away (within 15m radius, Signal: ${rssi} dBm)",
+            timestamp = now,
+            ttl = 1,
+            hopCount = 0,
+            hopPath = listOf(senderShortId),
+            status = DeliveryStatus.DELIVERED
+        )
+
+        scope.launch {
+            try {
+                val serialized = json.encodeToString(sosMessage).toByteArray(Charsets.UTF_8)
+                _incomingMessages.emit(
+                    TransportMessage(
+                        data = serialized,
+                        senderPeerId = senderShortId,
+                        transportType = TransportType.BLE,
+                        rssi = rssi
+                    )
+                )
+                Log.d(TAG, "Delivered incoming emergency SOS beacon from $senderShortId within 15m ($rssi dBm)")
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to emit incoming SOS beacon", e)
             }
         }
     }

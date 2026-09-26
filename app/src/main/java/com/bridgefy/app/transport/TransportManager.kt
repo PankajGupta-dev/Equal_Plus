@@ -116,7 +116,7 @@ class TransportManager(
     }
 
     /**
-     * Broadcast data to all known peers via WiFi Direct only.
+     * Broadcast data to all known peers via WiFi Direct and BLE.
      */
     suspend fun broadcastToAll(data: ByteArray, exclude: Set<String> = emptySet()) {
         wifiDirectTransport.broadcastMessage(data, exclude)
@@ -124,6 +124,32 @@ class TransportManager(
         // reaching nearby phones that are discovered but not currently in a WiFi P2P group.
         if (data.size <= com.bridgefy.app.transport.ble.BleConstants.MAX_BLE_PAYLOAD) {
             bleTransport.broadcastMessage(data, exclude)
+        }
+    }
+
+    /**
+     * Broadcast an emergency SOS message to ALL devices within a 15-meter radius.
+     * Concurrently utilizes:
+     * 1. WiFi Direct to any connected peers within the 15-meter zone.
+     * 2. BLE Emergency Beacon + BLE GATT writes to all nearby discovered phones in the 15m radius.
+     */
+    suspend fun broadcastSOS(data: ByteArray, lat: Double?, lon: Double?, exclude: Set<String> = emptySet()) {
+        Log.d(TAG, "Broadcasting SOS to all devices in 15m radius via BLE and WiFi Direct")
+        // WiFi Direct send to connected peers
+        scope.launch {
+            try {
+                wifiDirectTransport.broadcastMessage(data, exclude)
+            } catch (e: Exception) {
+                Log.e(TAG, "WiFi Direct SOS broadcast failed", e)
+            }
+        }
+        // BLE Emergency Broadcast (Airwave beacon + direct GATT write to peers within 15m)
+        scope.launch {
+            try {
+                bleTransport.broadcastSOS(data, lat, lon, exclude)
+            } catch (e: Exception) {
+                Log.e(TAG, "BLE SOS broadcast failed", e)
+            }
         }
     }
 

@@ -1,10 +1,7 @@
 package com.bridgefy.app.call
 
 import android.content.Context
-import android.graphics.Bitmap
 import android.util.Log
-import androidx.camera.core.Preview
-import androidx.lifecycle.LifecycleOwner
 import com.bridgefy.app.BridgeFyApplication
 import com.bridgefy.app.db.DatabaseProvider
 import com.bridgefy.app.db.CallLogQueries
@@ -29,7 +26,6 @@ class VoiceCallManager(
 
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private val audioEngine = AudioEngine(context)
-    private val videoEngine = VideoEngine(context)
 
     private val _callState = MutableStateFlow(CallState.IDLE)
     val callState: StateFlow<CallState> = _callState.asStateFlow()
@@ -43,19 +39,10 @@ class VoiceCallManager(
     private val _callDuration = MutableStateFlow(0L)
     val callDuration: StateFlow<Long> = _callDuration.asStateFlow()
 
-    private val _isVideoCall = MutableStateFlow(false)
-    val isVideoCall: StateFlow<Boolean> = _isVideoCall.asStateFlow()
-
     val isMuted = MutableStateFlow(false)
     val isSpeakerOn = MutableStateFlow(false)
 
-    val isLocalVideoEnabled = MutableStateFlow(true)
-    val isFrontCamera = MutableStateFlow(true)
-
-    val remoteVideoFrame: StateFlow<Bitmap?> = videoEngine.remoteFrame
-
     private var activeSocket: Socket? = null
-    private var activeVideoSocket: Socket? = null
     private var callId: String? = null
     private var isIncoming = false
     private var startTime: Long = 0L
@@ -88,8 +75,8 @@ class VoiceCallManager(
                         scope.launch {
                             meshManager.sendCallSignal(
                                 signal.callerDeviceId,
-                                if (message.type == MessageType.VIDEO_CALL_REQUEST) MessageType.VIDEO_CALL_REJECT else MessageType.CALL_REJECT,
-                                CallSignal(signal.callId, deviceId, getMyName(), isVideo = (message.type == MessageType.VIDEO_CALL_REQUEST))
+                                MessageType.CALL_REJECT,
+                                CallSignal(signal.callId, deviceId, getMyName(), isVideo = false)
                             )
                         }
                         return@withContext
@@ -100,7 +87,6 @@ class VoiceCallManager(
                     callId = signal.callId
                     _peerId.value = signal.callerDeviceId
                     _peerName.value = signal.callerName
-                    _isVideoCall.value = (message.type == MessageType.VIDEO_CALL_REQUEST || signal.isVideo)
                     _callState.value = CallState.RINGING
                     startTime = System.currentTimeMillis()
 
@@ -109,19 +95,12 @@ class VoiceCallManager(
                         signal.callerDeviceId,
                         deviceId,
                         CallLogStatus.MISSED,
-                        if (_isVideoCall.value) CallType.VIDEO else CallType.VOICE
+                        CallType.VOICE
                     )
 
                     // Start Audio Server for callee to accept connection from caller
                     wifiDirectTransport.startAudioServer { socket ->
                         onAudioSocketConnected(socket)
-                    }
-
-                    // Start Video Server if it is a video call
-                    if (_isVideoCall.value) {
-                        wifiDirectTransport.startVideoServer { socket ->
-                            onVideoSocketConnected(socket)
-                        }
                     }
 
                     // Ringing timeout
@@ -138,7 +117,7 @@ class VoiceCallManager(
                         isIncoming = false
                         startTime = System.currentTimeMillis()
 
-                        // As caller, connect to the callee's servers
+                        // As caller, connect to the callee's server
                         scope.launch(Dispatchers.IO) {
                             val audioSocket = wifiDirectTransport.connectAudioSocket(signal.callerDeviceId)
                             if (audioSocket != null) {
@@ -150,35 +129,22 @@ class VoiceCallManager(
                                 }
                                 return@launch
                             }
-
-                            if (_isVideoCall.value) {
-                                val videoSocket = wifiDirectTransport.connectVideoSocket(signal.callerDeviceId)
-                                if (videoSocket != null) {
-                                    onVideoSocketConnected(videoSocket)
-                                } else {
-                                    Log.e(TAG, "Failed to connect video socket to callee")
-                                    withContext(Dispatchers.Main) {
-                                        endCall()
-                                    }
-                                }
-                            }
                         }
                     }
                 }
 
                 MessageType.CALL_REJECT, MessageType.VIDEO_CALL_REJECT -> {
-                    if ((_callState.value == CallState.CALLING || _callState.value == CallState.RINGING) && callId == signal.callId) {
-                        cancelTimeoutTimer()
-                        Log.d(TAG, "Call rejected by remote")
+                    if (callId == signal.callId) {
+                        Log.d(TAG, "Call rejected by peer")
                         cleanupCall(CallLogStatus.REJECTED)
                     }
                 }
 
                 MessageType.CALL_END, MessageType.VIDEO_CALL_END -> {
-                    if (_callState.value != CallState.IDLE && callId == signal.callId) {
-                        cancelTimeoutTimer()
-                        Log.d(TAG, "Call ended by remote")
-                        cleanupCall(CallLogStatus.ENDED)
+                    if (callId == signal.callId) {
+                        Log.d(TAG, "Call ended by peer")
+                        val finalStatus = if (_callState.value == CallState.CONNECTED) CallLogStatus.ENDED else CallLogStatus.MISSED
+                        cleanupCall(finalStatus)
                     }
                 }
 
@@ -193,7 +159,6 @@ class VoiceCallManager(
         val newCallId = UUID.randomUUID().toString()
         callId = newCallId
         isIncoming = false
-        _isVideoCall.value = false
         _peerId.value = targetPeerId
         _peerName.value = targetPeerName
         _callState.value = CallState.CALLING
@@ -215,47 +180,18 @@ class VoiceCallManager(
         }
     }
 
-    fun initiateVideoCall(targetPeerId: String, targetPeerName: String) {
-        if (_callState.value != CallState.IDLE) return
-
-        val newCallId = UUID.randomUUID().toString()
-        callId = newCallId
-        isIncoming = false
-        _isVideoCall.value = true
-        _peerId.value = targetPeerId
-        _peerName.value = targetPeerName
-        _callState.value = CallState.CALLING
-        startTime = System.currentTimeMillis()
-
-        saveNewCallLog(newCallId, deviceId, targetPeerId, CallLogStatus.MISSED, CallType.VIDEO)
-
-        scope.launch {
-            meshManager.sendCallSignal(
-                targetPeerId,
-                MessageType.VIDEO_CALL_REQUEST,
-                CallSignal(newCallId, deviceId, getMyName(), isVideo = true)
-            )
-        }
-
-        startTimeoutTimer(CALL_TIMEOUT_MS) {
-            Log.d(TAG, "Calling timeout — no response")
-            cleanupCall(CallLogStatus.MISSED)
-        }
-    }
-
     fun acceptCall() {
         if (_callState.value != CallState.RINGING) return
         cancelTimeoutTimer()
 
         val pId = _peerId.value ?: return
         val cId = callId ?: return
-        val isVideo = _isVideoCall.value
 
         scope.launch {
             meshManager.sendCallSignal(
                 pId,
-                if (isVideo) MessageType.VIDEO_CALL_ACCEPT else MessageType.CALL_ACCEPT,
-                CallSignal(cId, deviceId, getMyName(), isVideo = isVideo)
+                MessageType.CALL_ACCEPT,
+                CallSignal(cId, deviceId, getMyName(), isVideo = false)
             )
         }
 
@@ -269,13 +205,12 @@ class VoiceCallManager(
 
         val pId = _peerId.value ?: return
         val cId = callId ?: return
-        val isVideo = _isVideoCall.value
 
         scope.launch {
             meshManager.sendCallSignal(
                 pId,
-                if (isVideo) MessageType.VIDEO_CALL_REJECT else MessageType.CALL_REJECT,
-                CallSignal(cId, deviceId, getMyName(), isVideo = isVideo)
+                MessageType.CALL_REJECT,
+                CallSignal(cId, deviceId, getMyName(), isVideo = false)
             )
         }
 
@@ -288,14 +223,13 @@ class VoiceCallManager(
 
         val pId = _peerId.value
         val cId = callId
-        val isVideo = _isVideoCall.value
 
         if (pId != null && cId != null) {
             scope.launch {
                 meshManager.sendCallSignal(
                     pId,
-                    if (isVideo) MessageType.VIDEO_CALL_END else MessageType.CALL_END,
-                    CallSignal(cId, deviceId, getMyName(), isVideo = isVideo)
+                    MessageType.CALL_END,
+                    CallSignal(cId, deviceId, getMyName(), isVideo = false)
                 )
             }
         }
@@ -314,26 +248,6 @@ class VoiceCallManager(
         audioEngine.isSpeakerOn = isSpeakerOn.value
     }
 
-    fun toggleLocalVideo() {
-        isLocalVideoEnabled.value = !isLocalVideoEnabled.value
-        videoEngine.isVideoEnabled = isLocalVideoEnabled.value
-    }
-
-    fun toggleCameraFacing() {
-        isFrontCamera.value = !isFrontCamera.value
-    }
-
-    fun startCameraCapture(lifecycleOwner: LifecycleOwner, onPreviewReady: (Preview) -> Unit) {
-        val socket = activeVideoSocket ?: return
-        videoEngine.isVideoEnabled = isLocalVideoEnabled.value
-        videoEngine.startCapture(
-            lifecycleOwner = lifecycleOwner,
-            socket = socket,
-            isFrontCamera = isFrontCamera.value,
-            onPreviewReady = onPreviewReady
-        )
-    }
-
     private fun onAudioSocketConnected(socket: Socket) {
         Log.d(TAG, "Audio socket connection established!")
         activeSocket = socket
@@ -347,14 +261,6 @@ class VoiceCallManager(
             _callState.value = CallState.CONNECTED
             startCallTimer()
         }
-    }
-
-    private fun onVideoSocketConnected(socket: Socket) {
-        Log.d(TAG, "Video socket connection established!")
-        activeVideoSocket = socket
-        
-        // Start playback loop
-        videoEngine.startPlayback(socket)
     }
 
     private fun startCallTimer() {
@@ -387,25 +293,18 @@ class VoiceCallManager(
             timerJob?.cancel()
             timerJob = null
 
-            // Stop engines
+            // Stop engine
             audioEngine.stop()
-            videoEngine.stop()
 
-            // Close Sockets
+            // Close Socket
             withContext(Dispatchers.IO) {
                 try {
                     activeSocket?.close()
                 } catch (_: Exception) {}
                 activeSocket = null
-
-                try {
-                    activeVideoSocket?.close()
-                } catch (_: Exception) {}
-                activeVideoSocket = null
                 
-                // Stop servers
+                // Stop server
                 wifiDirectTransport.stopAudioServer()
-                wifiDirectTransport.stopVideoServer()
             }
 
             // Save database log
@@ -421,11 +320,8 @@ class VoiceCallManager(
             _peerId.value = null
             _peerName.value = ""
             _callDuration.value = 0L
-            _isVideoCall.value = false
             isMuted.value = false
             isSpeakerOn.value = false
-            isLocalVideoEnabled.value = true
-            isFrontCamera.value = true
             callId = null
         }
     }

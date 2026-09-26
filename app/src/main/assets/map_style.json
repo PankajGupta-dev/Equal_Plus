@@ -1,16 +1,13 @@
 {
   "version": 8,
-  "name": "BridgeFy Dark Map",
+  "name": "BridgeFy Offline Map",
   "sources": {
-    "osm-raster": {
+    "local-tiles": {
       "type": "raster",
       "tiles": [
-        "https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}@2x.png",
-        "https://b.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}@2x.png",
-        "https://c.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}@2x.png"
+        "http://127.0.0.1:8765/tiles/{z}/{x}/{y}"
       ],
       "tileSize": 256,
-      "attribution": "© OpenStreetMap contributors © CARTO",
       "maxzoom": 19
     }
   },
@@ -23,9 +20,9 @@
       }
     },
     {
-      "id": "osm-tiles",
+      "id": "local-raster-tiles",
       "type": "raster",
-      "source": "osm-raster",
+      "source": "local-tiles",
       "paint": {
         "raster-opacity": 1.0
       }

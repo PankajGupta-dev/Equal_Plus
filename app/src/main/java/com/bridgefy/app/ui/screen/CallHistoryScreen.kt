@@ -34,7 +34,7 @@ import java.util.*
 fun CallHistoryScreen(
     callLogs: List<CallLog>,
     onBack: () -> Unit = {},
-    onCallUser: (peerId: String, peerName: String, isVideo: Boolean) -> Unit,
+    onCallUser: (peerId: String, peerName: String) -> Unit,
     modifier: Modifier = Modifier,
     bottomBar: @Composable () -> Unit = {}
 ) {
@@ -98,7 +98,7 @@ fun CallHistoryScreen(
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        text = "All your direct voice and video calls over Wi-Fi Direct will be logged here.",
+                        text = "All your direct voice calls over Wi-Fi Direct will be logged here.",
                         color = TextSecondary,
                         fontSize = 14.sp,
                         textAlign = TextAlign.Center,
@@ -119,7 +119,6 @@ fun CallHistoryScreen(
                     val isOutgoing = log.callerId != log.receiverId && log.callerId.startsWith("device") || !log.callerId.contains("-") // caller is us, let's simplify: callerId == our ID
                     // Wait, let's simplify display: we can show caller/receiver display. Since we only have raw device IDs, let's truncate.
                     val remoteId = if (log.callerId.startsWith("device") || log.callerId == "us") log.receiverId else log.callerId
-                    val isVideo = log.callType == CallType.VIDEO
                     
                     val statusColor = when (log.status) {
                         CallLogStatus.MISSED -> StatusFailed
@@ -155,7 +154,7 @@ fun CallHistoryScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clickable {
-                                onCallUser(remoteId, "Peer-$peerDisplayName", isVideo)
+                                onCallUser(remoteId, "Peer-$peerDisplayName")
                             }
                     ) {
                         Row(
@@ -173,7 +172,7 @@ fun CallHistoryScreen(
                                 contentAlignment = Alignment.Center
                             ) {
                                 Icon(
-                                    imageVector = if (isVideo) Icons.Default.Videocam else Icons.Default.Call,
+                                    imageVector = Icons.Default.Call,
                                     contentDescription = null,
                                     tint = MeshBlue,
                                     modifier = Modifier.size(24.dp)
@@ -230,14 +229,14 @@ fun CallHistoryScreen(
 
                                 IconButton(
                                     onClick = {
-                                        onCallUser(remoteId, "Peer-$peerDisplayName", isVideo)
+                                        onCallUser(remoteId, "Peer-$peerDisplayName")
                                     },
                                     modifier = Modifier
                                         .size(36.dp)
                                         .background(MeshNavyLight, CircleShape)
-                                ) {
+                                 ) {
                                     Icon(
-                                        imageVector = if (isVideo) Icons.Default.Videocam else Icons.Default.Call,
+                                        imageVector = Icons.Default.Call,
                                         contentDescription = "Call Back",
                                         tint = MeshGreen,
                                         modifier = Modifier.size(18.dp)
