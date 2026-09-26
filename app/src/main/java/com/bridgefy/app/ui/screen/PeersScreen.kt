@@ -123,7 +123,7 @@ fun PeersScreen(
             },
             text = {
                 Text(
-                    "This will broadcast your location and an emergency \"HELP ME\" message to ALL nearby BridgeFy devices.\n\nOnly use this in real emergencies.",
+                    "This will broadcast your location and an emergency \"HELP ME\" message to ALL devices within a 15-meter radius (both connected and nearby).\n\nOnly use this in real emergencies.",
                     textAlign = TextAlign.Center,
                     lineHeight = 20.sp
                 )

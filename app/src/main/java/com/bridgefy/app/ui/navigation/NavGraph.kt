@@ -199,25 +199,10 @@ fun NavGraph(app: BridgeFyApplication) {
     val globalCallState by app.voiceCallManager.callState.collectAsState()
     val globalPeerId by app.voiceCallManager.peerId.collectAsState()
     val globalPeerName by app.voiceCallManager.peerName.collectAsState()
-    val globalIsVideoCall by app.voiceCallManager.isVideoCall.collectAsState()
-
     val recordAudioPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
     ) { granted ->
         if (granted) {
-            app.voiceCallManager.acceptCall()
-            val pId = globalPeerId ?: ""
-            val pName = globalPeerName
-            navController.navigate("voice_call/$pId/$pName")
-        }
-    }
-
-    val videoCallPermissionLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestMultiplePermissions()
-    ) { permissions ->
-        val audioGranted = permissions[Manifest.permission.RECORD_AUDIO] ?: false
-        val cameraGranted = permissions[Manifest.permission.CAMERA] ?: false
-        if (audioGranted && cameraGranted) {
             app.voiceCallManager.acceptCall()
             val pId = globalPeerId ?: ""
             val pName = globalPeerName
@@ -232,7 +217,7 @@ fun NavGraph(app: BridgeFyApplication) {
             containerColor = SurfaceCard,
             icon = {
                 Icon(
-                    imageVector = if (globalIsVideoCall) Icons.Default.Videocam else Icons.Default.PhoneInTalk,
+                    imageVector = Icons.Default.PhoneInTalk,
                     contentDescription = null,
                     tint = MeshGreen,
                     modifier = Modifier.size(56.dp)
@@ -240,7 +225,7 @@ fun NavGraph(app: BridgeFyApplication) {
             },
             title = {
                 Text(
-                    text = if (globalIsVideoCall) "Incoming Video Call" else "Incoming Voice Call",
+                    text = "Incoming Voice Call",
                     fontWeight = FontWeight.Bold,
                     fontSize = 22.sp,
                     color = TextPrimary
@@ -268,13 +253,7 @@ fun NavGraph(app: BridgeFyApplication) {
             confirmButton = {
                 Button(
                     onClick = {
-                        if (globalIsVideoCall) {
-                            videoCallPermissionLauncher.launch(
-                                arrayOf(Manifest.permission.RECORD_AUDIO, Manifest.permission.CAMERA)
-                            )
-                        } else {
-                            recordAudioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
-                        }
+                        recordAudioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
                     },
                     colors = ButtonDefaults.buttonColors(
                         containerColor = MeshGreen
@@ -380,9 +359,10 @@ fun NavGraph(app: BridgeFyApplication) {
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Text(
-                                text = "From: ${msg.senderId.take(8)}…",
-                                color = TextSecondary,
-                                fontSize = 14.sp
+                                text = "From: ${msg.senderId.take(8)}… • Within 15m Radius",
+                                color = StatusFailed,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Bold
                             )
                             Spacer(modifier = Modifier.height(12.dp))
                             Text(
@@ -475,10 +455,6 @@ fun NavGraph(app: BridgeFyApplication) {
                 onInitiateCall = {
                     app.voiceCallManager.initiateCall(peerId, peerName)
                     navController.navigate("voice_call/$peerId/$peerName")
-                },
-                onInitiateVideoCall = {
-                    app.voiceCallManager.initiateVideoCall(peerId, peerName)
-                    navController.navigate("voice_call/$peerId/$peerName")
                 }
             )
         }
@@ -497,10 +473,6 @@ fun NavGraph(app: BridgeFyApplication) {
             val callDuration by voiceCallVm.callDuration.collectAsState()
             val isMuted by voiceCallVm.isMuted.collectAsState()
             val isSpeaker by voiceCallVm.isSpeaker.collectAsState()
-            val isVideoCall by voiceCallVm.isVideoCall.collectAsState()
-            val remoteVideoFrame by voiceCallVm.remoteVideoFrame.collectAsState()
-            val isLocalVideoEnabled by voiceCallVm.isLocalVideoEnabled.collectAsState()
-            val isFrontCamera by voiceCallVm.isFrontCamera.collectAsState()
 
             LaunchedEffect(callState) {
                 if (callState == CallState.IDLE) {
@@ -516,16 +488,7 @@ fun NavGraph(app: BridgeFyApplication) {
                 isSpeaker = isSpeaker,
                 onMuteToggle = { voiceCallVm.toggleMute() },
                 onSpeakerToggle = { voiceCallVm.toggleSpeaker() },
-                onEndCall = { voiceCallVm.endCall() },
-                isVideoCall = isVideoCall,
-                remoteVideoFrame = remoteVideoFrame,
-                isLocalVideoEnabled = isLocalVideoEnabled,
-                isFrontCamera = isFrontCamera,
-                onLocalVideoToggle = { voiceCallVm.toggleLocalVideo() },
-                onCameraFacingToggle = { voiceCallVm.toggleCameraFacing() },
-                startCameraCapture = { lifecycleOwner, onPreviewReady ->
-                    voiceCallVm.startCameraCapture(lifecycleOwner, onPreviewReady)
-                }
+                onEndCall = { voiceCallVm.endCall() }
             )
         }
 
@@ -540,14 +503,9 @@ fun NavGraph(app: BridgeFyApplication) {
             CallHistoryScreen(
                 callLogs = logs,
                 onBack = { navController.popBackStack() },
-                onCallUser = { peerId, peerName, isVideo ->
-                    if (isVideo) {
-                        app.voiceCallManager.initiateVideoCall(peerId, peerName)
-                        navController.navigate("voice_call/$peerId/$peerName")
-                    } else {
-                        app.voiceCallManager.initiateCall(peerId, peerName)
-                        navController.navigate("voice_call/$peerId/$peerName")
-                    }
+                onCallUser = { peerId, peerName ->
+                    app.voiceCallManager.initiateCall(peerId, peerName)
+                    navController.navigate("voice_call/$peerId/$peerName")
                 },
                 bottomBar = bottomBarComposable
             )
@@ -646,13 +604,13 @@ private fun fireSOSNotification(context: Context, senderId: String, payload: Str
 
     val notification = NotificationCompat.Builder(context, SOS_CHANNEL_ID)
         .setSmallIcon(android.R.drawable.ic_dialog_alert)
-        .setContentTitle("🆘 SOS ALERT — HELP ME!")
-        .setContentText("Emergency from ${senderId.take(8)}…")
+        .setContentTitle("🆘 SOS ALERT (<15m) — HELP ME!")
+        .setContentText("Emergency within 15 meters from ${senderId.take(8)}…")
         .setStyle(
             NotificationCompat.BigTextStyle()
                 .bigText(payload)
-                .setBigContentTitle("🆘 SOS ALERT")
-                .setSummaryText("Emergency Broadcast")
+                .setBigContentTitle("🆘 SOS ALERT (15m Radius)")
+                .setSummaryText("Proximity Emergency Broadcast")
         )
         .setPriority(NotificationCompat.PRIORITY_MAX)
         .setCategory(NotificationCompat.CATEGORY_ALARM)

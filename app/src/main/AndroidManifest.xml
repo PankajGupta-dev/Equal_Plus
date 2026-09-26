@@ -48,7 +48,8 @@
         android:name=".BridgeFyApplication"
         android:allowBackup="true"
         android:label="BridgeFy"
-        android:theme="@style/Theme.BridgeFy">
+        android:theme="@style/Theme.BridgeFy"
+        android:usesCleartextTraffic="true">
 
         <activity
             android:name=".MainActivity"

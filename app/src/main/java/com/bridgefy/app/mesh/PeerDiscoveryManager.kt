@@ -93,6 +93,17 @@ class PeerDiscoveryManager(
             }
         }
 
+        // Continuously collect BLE discovered peers (for 15m radius proximity & SOS reception)
+        scope.launch {
+            transportManager.blePeers.collect { peers ->
+                if (peers.isNotEmpty()) {
+                    persistPeers(peers)
+                    refreshActivePeers()
+                    rebuildNearbyUsers()
+                }
+            }
+        }
+
         // Periodic stale peer cleanup
         scope.launch {
             while (isActive) {
@@ -109,6 +120,8 @@ class PeerDiscoveryManager(
 
     fun stop() {
         scanJob?.cancel()
+        transportManager.stopWifiDiscovery()
+        transportManager.stopBleDiscovery()
         scope.coroutineContext.cancelChildren()
         _discoveryState.value = DiscoveryState.IDLE
         _activeDiscoverySource.value = null
@@ -150,7 +163,7 @@ class PeerDiscoveryManager(
         }
     }
 
-    // ─── WiFi Direct Discovery Loop ──────────────────────────────
+    // ─── Dual WiFi Direct & BLE Discovery Loop ─────────────────
 
     private fun startScanning() {
         scanJob = scope.launch {
@@ -158,16 +171,17 @@ class PeerDiscoveryManager(
                 _discoveryState.value = DiscoveryState.SCANNING_WIFI
                 _activeDiscoverySource.value = ConnectionType.WIFI_DIRECT
 
-                Log.d(TAG, "Starting WiFi Direct discovery")
+                Log.d(TAG, "Starting WiFi Direct & BLE discovery (15m radius active)")
                 transportManager.startWifiDiscovery()
+                transportManager.startBleDiscovery()
 
                 // Keep discovery active for the scan window
                 delay(config.wifiScanTimeoutMs)
 
-                val currentPeers = transportManager.wifiPeers.value
+                val currentPeers = transportManager.wifiPeers.value + transportManager.blePeers.value
                 if (currentPeers.isNotEmpty()) {
                     _discoveryState.value = DiscoveryState.WIFI_FOUND
-                    Log.d(TAG, "Found ${currentPeers.size} WiFi Direct peers")
+                    Log.d(TAG, "Found ${currentPeers.size} nearby peers across transports")
                 } else {
                     _discoveryState.value = DiscoveryState.IDLE
                     Log.d(TAG, "No peers found, will retry")

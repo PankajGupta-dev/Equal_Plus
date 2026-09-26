@@ -398,9 +398,11 @@ class MeshManager(
 
         deduplicationManager.markSeen(message.id)
         repository.insertMessage(message)
-        sendViaTransport(message)
+        val serialized = json.encodeToString(message).toByteArray(Charsets.UTF_8)
+        transportManager.broadcastSOS(serialized, lat, lon)
+        repository.updateStatus(message.id, DeliveryStatus.SENT)
         updateStats()
-        Log.d(TAG, "SOS broadcast sent")
+        Log.d(TAG, "SOS emergency broadcast sent to all devices within 15m radius")
     }
 
     /**
