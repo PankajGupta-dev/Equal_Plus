@@ -11,7 +11,7 @@ BridgeFy is a decentralized, offline-first Android communication application des
 *   **Background Services:** Persistent mesh connectivity and location updates powered by optimized Android Foreground Services.
 *   **Security & Encryption:** Built-in cryptographic components for secure key management and encrypted peer-to-peer communication.
 *   **Modern UI:** A clean, responsive interface built entirely with Jetpack Compose, following Material 3 design guidelines.
-
+..
 ## 🛠 Tech Stack
 
 *   **Language:** Kotlin
