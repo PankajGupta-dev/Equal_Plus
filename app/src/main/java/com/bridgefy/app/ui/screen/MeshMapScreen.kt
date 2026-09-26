@@ -38,7 +38,9 @@ import com.mapbox.geojson.FeatureCollection
 import com.mapbox.geojson.LineString
 import com.mapbox.geojson.Point
 import com.mapbox.mapboxsdk.Mapbox
+import com.mapbox.mapboxsdk.WellKnownTileServer
 import com.mapbox.mapboxsdk.camera.CameraPosition
+import com.mapbox.mapboxsdk.camera.CameraUpdateFactory
 import com.mapbox.mapboxsdk.geometry.LatLng
 import com.mapbox.mapboxsdk.maps.MapView
 import com.mapbox.mapboxsdk.maps.MapboxMap
@@ -157,6 +159,25 @@ fun MeshMapScreen(
         styleReady = true
     }
 
+    // Auto-reload map style and animate camera when active MBTiles changes
+    LaunchedEffect(activeMbtilesName) {
+        val map = mapRef ?: return@LaunchedEffect
+        if (activeMbtilesName != null) {
+            val styleUri = "http://127.0.0.1:8765/style.json"
+            map.setStyle(Style.Builder().fromUri(styleUri)) { style ->
+                setupStyleLayers(style)
+            }
+            if (focusLat == null && OfflineMapManager.activeCenterLat != null && OfflineMapManager.activeCenterLon != null) {
+                map.animateCamera(
+                    CameraUpdateFactory.newLatLngZoom(
+                        LatLng(OfflineMapManager.activeCenterLat!!, OfflineMapManager.activeCenterLon!!),
+                        OfflineMapManager.activeCenterZoom ?: 10.0
+                    )
+                )
+            }
+        }
+    }
+
     // System file picker to import custom .mbtiles file
     val filePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
@@ -167,7 +188,12 @@ fun MeshMapScreen(
                 if (success) {
                     Toast.makeText(context, "Offline map loaded successfully!", Toast.LENGTH_SHORT).show()
                     // Reload style to fetch newly available tiles from local server
-                    mapRef?.setStyle(Style.Builder().fromUri("asset://map_style.json")) { style ->
+                    val styleUri = if (OfflineMapManager.activeMbtilesName.value != null) {
+                        "http://127.0.0.1:8765/style.json"
+                    } else {
+                        "asset://map_style.json"
+                    }
+                    mapRef?.setStyle(Style.Builder().fromUri(styleUri)) { style ->
                         setupStyleLayers(style)
                     }
                 } else {
@@ -311,26 +337,44 @@ fun MeshMapScreen(
             // MapLibre map view (using local tile server, zero API key check)
             AndroidView(
                 factory = { ctx ->
-                    Mapbox.getInstance(ctx)
+                    try {
+                        Mapbox.getInstance(ctx, "offline_token", WellKnownTileServer.MapLibre)
+                        Mapbox.getTileServerOptions()?.setApiKeyRequired(false)
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                    }
                     MapView(ctx).also { mapView ->
                         mapViewRef = mapView
                         mapView.onCreate(null)
                         mapView.getMapAsync { map ->
                             mapRef = map
 
+                            val centerLat = OfflineMapManager.activeCenterLat
+                            val centerLon = OfflineMapManager.activeCenterLon
                             val startTarget = if (focusLat != null && focusLon != null) {
                                 LatLng(focusLat, focusLon)
+                            } else if (centerLat != null && centerLon != null) {
+                                LatLng(centerLat, centerLon)
                             } else {
                                 LatLng(20.0, 78.0) // Default: India center
                             }
-                            val startZoom = if (focusLat != null) 15.0 else 4.0
+                            val startZoom = if (focusLat != null) {
+                                15.0
+                            } else {
+                                OfflineMapManager.activeCenterZoom ?: 8.0
+                            }
 
                             map.cameraPosition = CameraPosition.Builder()
                                 .target(startTarget)
                                 .zoom(startZoom)
                                 .build()
 
-                            map.setStyle(Style.Builder().fromUri("asset://map_style.json")) { style ->
+                            val styleUri = if (OfflineMapManager.activeMbtilesName.value != null) {
+                                "http://127.0.0.1:8765/style.json"
+                            } else {
+                                "asset://map_style.json"
+                            }
+                            map.setStyle(Style.Builder().fromUri(styleUri)) { style ->
                                 setupStyleLayers(style)
                             }
                         }

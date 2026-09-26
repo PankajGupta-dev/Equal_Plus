@@ -50,6 +50,19 @@ object OfflineMapManager {
     private val _importProgress = MutableStateFlow<String?>(null)
     val importProgress: StateFlow<String?> = _importProgress.asStateFlow()
 
+    var activeFormat: String = "pbf"
+        private set
+    var activeCenterLat: Double? = null
+        private set
+    var activeCenterLon: Double? = null
+        private set
+    var activeCenterZoom: Double? = null
+        private set
+    var activeMinZoom: Int = 0
+        private set
+    var activeMaxZoom: Int = 14
+        private set
+
     /**
      * Initializes the offline tile server and automatically loads any existing MBTiles file.
      */
@@ -92,7 +105,7 @@ object OfflineMapManager {
     }
 
     /**
-     * Handles incoming HTTP requests for /tiles/{z}/{x}/{y}
+     * Handles incoming HTTP requests for /tiles/{z}/{x}/{y} and /style.json
      */
     private fun handleClient(socket: Socket) {
         try {
@@ -109,8 +122,14 @@ object OfflineMapManager {
             }
 
             val rawUri = parts[1]
-            // Format expected: /tiles/{z}/{x}/{y} or /tiles/{z}/{x}/{y}.png or with query params
             val cleanPath = rawUri.substringBefore("?").removePrefix("/")
+
+            if (cleanPath == "style.json" || cleanPath == "style") {
+                val styleBytes = getStyleJson().toByteArray(Charsets.UTF_8)
+                sendResponse(output, 200, "OK", styleBytes, "application/json; charset=utf-8")
+                return
+            }
+
             val pathSegments = cleanPath.split("/")
 
             if (pathSegments.size >= 4 && pathSegments[0] == "tiles") {
@@ -188,7 +207,7 @@ object OfflineMapManager {
                 return "image/webp"
             }
         }
-        return "application/x-protobuf"
+        return "application/vnd.mapbox-vector-tile"
     }
 
     /**
@@ -228,45 +247,206 @@ object OfflineMapManager {
     }
 
     /**
-     * Scans storage for an existing MBTiles file and loads it.
+     * Dynamically generates the MapLibre style JSON for the currently loaded MBTiles.
+     * ZERO external network calls and ZERO API keys required.
+     */
+    fun getStyleJson(): String {
+        return if (activeFormat == "pbf" || activeFormat == "mvt") {
+            """
+            {
+              "version": 8,
+              "name": "BridgeFy Offline Vector Map",
+              "sources": {
+                "local-vector": {
+                  "type": "vector",
+                  "tiles": [
+                    "http://127.0.0.1:$SERVER_PORT/tiles/{z}/{x}/{y}"
+                  ],
+                  "minzoom": $activeMinZoom,
+                  "maxzoom": $activeMaxZoom
+                }
+              },
+              "layers": [
+                {
+                  "id": "background",
+                  "type": "background",
+                  "paint": {
+                    "background-color": "#0A1628"
+                  }
+                },
+                {
+                  "id": "landuse",
+                  "type": "fill",
+                  "source": "local-vector",
+                  "source-layer": "landuse",
+                  "paint": {
+                    "fill-color": "#0e1f30"
+                  }
+                },
+                {
+                  "id": "water",
+                  "type": "fill",
+                  "source": "local-vector",
+                  "source-layer": "water",
+                  "paint": {
+                    "fill-color": "#0c2847"
+                  }
+                },
+                {
+                  "id": "waterway",
+                  "type": "line",
+                  "source": "local-vector",
+                  "source-layer": "waterway",
+                  "paint": {
+                    "line-color": "#113860",
+                    "line-width": 1.5
+                  }
+                },
+                {
+                  "id": "building",
+                  "type": "fill",
+                  "source": "local-vector",
+                  "source-layer": "building",
+                  "paint": {
+                    "fill-color": "#122035",
+                    "fill-outline-color": "#1c3050"
+                  }
+                },
+                {
+                  "id": "road",
+                  "type": "line",
+                  "source": "local-vector",
+                  "source-layer": "transportation",
+                  "paint": {
+                    "line-color": "#1e3d60",
+                    "line-width": 1.5
+                  }
+                },
+                {
+                  "id": "boundary",
+                  "type": "line",
+                  "source": "local-vector",
+                  "source-layer": "boundary",
+                  "paint": {
+                    "line-color": "#3b82f6",
+                    "line-width": 1.0,
+                    "line-dasharray": [2, 2]
+                  }
+                }
+              ]
+            }
+            """.trimIndent()
+        } else {
+            """
+            {
+              "version": 8,
+              "name": "BridgeFy Offline Raster Map",
+              "sources": {
+                "local-tiles": {
+                  "type": "raster",
+                  "tiles": [
+                    "http://127.0.0.1:$SERVER_PORT/tiles/{z}/{x}/{y}"
+                  ],
+                  "tileSize": 256,
+                  "minzoom": $activeMinZoom,
+                  "maxzoom": $activeMaxZoom
+                }
+              },
+              "layers": [
+                {
+                  "id": "background",
+                  "type": "background",
+                  "paint": {
+                    "background-color": "#0A1628"
+                  }
+                },
+                {
+                  "id": "local-raster-tiles",
+                  "type": "raster",
+                  "source": "local-tiles",
+                  "paint": {
+                    "raster-opacity": 1.0
+                  }
+                }
+              ]
+            }
+            """.trimIndent()
+        }
+    }
+
+    /**
+     * Scans storage and assets for an existing MBTiles file and loads it.
      */
     fun findAndLoadDefaultMbtiles(context: Context): Boolean {
+        val candidateNames = listOf("world.mbtiles", DEFAULT_MBTILES_FILENAME, "map.mbtiles")
+
+        // 0. Check APK assets for bundled MBTiles
+        try {
+            val assetList = context.assets.list("") ?: emptyArray()
+            val mbtilesAsset = candidateNames.firstOrNull { it in assetList }
+                ?: assetList.firstOrNull { it.endsWith(".mbtiles", ignoreCase = true) }
+
+            if (mbtilesAsset != null) {
+                val targetFile = File(context.filesDir, mbtilesAsset)
+                var needsCopy = !targetFile.exists() || targetFile.length() == 0L
+                if (!needsCopy) {
+                    val assetFd = try { context.assets.openFd(mbtilesAsset) } catch (_: Exception) { null }
+                    if (assetFd != null) {
+                        if (targetFile.length() != assetFd.length) {
+                            needsCopy = true
+                        }
+                        assetFd.close()
+                    }
+                }
+
+                if (needsCopy) {
+                    Log.i(TAG, "Extracting bundled asset $mbtilesAsset to ${targetFile.absolutePath}...")
+                    _importProgress.value = "Extracting offline map..."
+                    context.assets.open(mbtilesAsset).use { input ->
+                        FileOutputStream(targetFile).use { output ->
+                            input.copyTo(output)
+                        }
+                    }
+                    _importProgress.value = null
+                    Log.i(TAG, "Extracted $mbtilesAsset successfully (${targetFile.length()} bytes)")
+                }
+
+                if (targetFile.exists() && targetFile.length() > 0) {
+                    if (loadMbtilesFile(targetFile)) return true
+                }
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Error checking assets for mbtiles: ${e.message}")
+        }
+
         // 1. Check internal app files directory
-        val internalFile = File(context.filesDir, DEFAULT_MBTILES_FILENAME)
-        if (internalFile.exists() && internalFile.length() > 0) {
-            return loadMbtilesFile(internalFile)
+        for (name in candidateNames) {
+            val internalFile = File(context.filesDir, name)
+            if (internalFile.exists() && internalFile.length() > 0) {
+                if (loadMbtilesFile(internalFile)) return true
+            }
         }
 
-        // 2. Check "map.mbtiles" in internal storage
-        val altInternal = File(context.filesDir, "map.mbtiles")
-        if (altInternal.exists() && altInternal.length() > 0) {
-            return loadMbtilesFile(altInternal)
-        }
-
-        // 3. Check app external files directory
+        // 2. Check app external files directory
         val extDir = context.getExternalFilesDir(null)
         if (extDir != null) {
-            val extFile = File(extDir, DEFAULT_MBTILES_FILENAME)
-            if (extFile.exists() && extFile.length() > 0) {
-                return loadMbtilesFile(extFile)
-            }
-            val extMapFile = File(extDir, "map.mbtiles")
-            if (extMapFile.exists() && extMapFile.length() > 0) {
-                return loadMbtilesFile(extMapFile)
+            for (name in candidateNames) {
+                val extFile = File(extDir, name)
+                if (extFile.exists() && extFile.length() > 0) {
+                    if (loadMbtilesFile(extFile)) return true
+                }
             }
         }
 
-        // 4. Check public Downloads folder
+        // 3. Check public Downloads folder
         try {
             val downloadDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
             if (downloadDir != null && downloadDir.exists()) {
-                val dlFile = File(downloadDir, "map.mbtiles")
-                if (dlFile.exists() && dlFile.length() > 0) {
-                    return loadMbtilesFile(dlFile)
-                }
-                val dlOffline = File(downloadDir, DEFAULT_MBTILES_FILENAME)
-                if (dlOffline.exists() && dlOffline.length() > 0) {
-                    return loadMbtilesFile(dlOffline)
+                for (name in candidateNames) {
+                    val dlFile = File(downloadDir, name)
+                    if (dlFile.exists() && dlFile.length() > 0) {
+                        if (loadMbtilesFile(dlFile)) return true
+                    }
                 }
             }
         } catch (_: Exception) {}
@@ -307,7 +487,36 @@ object OfflineMapManager {
             activeDb = newDb
             oldDb?.close()
             _activeMbtilesName.value = file.name
-            Log.i(TAG, "Successfully loaded MBTiles database: ${file.name} (${file.length() / (1024 * 1024)} MB)")
+
+            // Read metadata to detect format (pbf vector vs png/jpg raster) and center
+            try {
+                val metaCursor = newDb.rawQuery("SELECT name, value FROM metadata", null)
+                metaCursor.use {
+                    while (it.moveToNext()) {
+                        val name = it.getString(0)
+                        val value = it.getString(1)
+                        when (name.lowercase()) {
+                            "format" -> activeFormat = value.lowercase()
+                            "minzoom" -> activeMinZoom = value.toIntOrNull() ?: 0
+                            "maxzoom" -> activeMaxZoom = value.toIntOrNull() ?: 14
+                            "center" -> {
+                                val parts = value.split(",")
+                                if (parts.size >= 2) {
+                                    activeCenterLon = parts[0].toDoubleOrNull()
+                                    activeCenterLat = parts[1].toDoubleOrNull()
+                                    if (parts.size >= 3) {
+                                        activeCenterZoom = parts[2].toDoubleOrNull()
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed reading metadata: ${e.message}")
+            }
+
+            Log.i(TAG, "Successfully loaded MBTiles database: ${file.name} (Format: $activeFormat, ${file.length() / (1024 * 1024)} MB)")
             return true
         } catch (e: Exception) {
             Log.e(TAG, "Failed to open MBTiles database: ${e.message}", e)

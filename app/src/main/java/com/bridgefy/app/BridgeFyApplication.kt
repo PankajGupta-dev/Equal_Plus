@@ -72,6 +72,15 @@ class BridgeFyApplication : Application() {
         // Initialize 100% offline map tile manager
         com.bridgefy.app.map.OfflineMapManager.init(this)
 
+        // Initialize MapLibre Native SDK with ZERO API key requirement
+        try {
+            com.mapbox.mapboxsdk.Mapbox.getInstance(this, "offline_token", com.mapbox.mapboxsdk.WellKnownTileServer.MapLibre)
+            com.mapbox.mapboxsdk.Mapbox.getTileServerOptions()?.setApiKeyRequired(false)
+            Log.d(TAG, "MapLibre initialized for 100% offline MBTiles operation (zero API keys)")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to initialize MapLibre: ${e.message}", e)
+        }
+
         Log.d(TAG, "BridgeFy initialized")
     }
 

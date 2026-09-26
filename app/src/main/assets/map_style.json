@@ -1,14 +1,14 @@
 {
   "version": 8,
-  "name": "BridgeFy Offline Map",
+  "name": "BridgeFy Offline Vector Map",
   "sources": {
-    "local-tiles": {
-      "type": "raster",
+    "local-vector": {
+      "type": "vector",
       "tiles": [
         "http://127.0.0.1:8765/tiles/{z}/{x}/{y}"
       ],
-      "tileSize": 256,
-      "maxzoom": 19
+      "minzoom": 0,
+      "maxzoom": 14
     }
   },
   "layers": [
@@ -20,11 +20,62 @@
       }
     },
     {
-      "id": "local-raster-tiles",
-      "type": "raster",
-      "source": "local-tiles",
+      "id": "landuse",
+      "type": "fill",
+      "source": "local-vector",
+      "source-layer": "landuse",
       "paint": {
-        "raster-opacity": 1.0
+        "fill-color": "#0d1d33"
+      }
+    },
+    {
+      "id": "water",
+      "type": "fill",
+      "source": "local-vector",
+      "source-layer": "water",
+      "paint": {
+        "fill-color": "#0c2847"
+      }
+    },
+    {
+      "id": "waterway",
+      "type": "line",
+      "source": "local-vector",
+      "source-layer": "waterway",
+      "paint": {
+        "line-color": "#113860",
+        "line-width": 1.5
+      }
+    },
+    {
+      "id": "building",
+      "type": "fill",
+      "source": "local-vector",
+      "source-layer": "building",
+      "paint": {
+        "fill-color": "#122035",
+        "fill-outline-color": "#1c3050"
+      }
+    },
+    {
+      "id": "road",
+      "type": "line",
+      "source": "local-vector",
+      "source-layer": "transportation",
+      "paint": {
+        "line-color": "#1e3d60",
+        "line-width": 1.5
+      }
+    },
+    {
+      "id": "boundary",
+      "type": "line",
+      "source": "local-vector",
+      "source-layer": "boundary",
+      "paint": {
+        "line-color": "#3b82f6",
+        "line-width": 1.0,
+        "line-dasharray": [2, 2]
       }
     }
   ]

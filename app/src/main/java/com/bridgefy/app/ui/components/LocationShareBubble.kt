@@ -88,7 +88,8 @@ fun LocationShareBubble(
         // actual offline MapLibre preview card
         AndroidView(
             factory = { context ->
-                Mapbox.getInstance(context)
+                com.mapbox.mapboxsdk.Mapbox.getInstance(context, "offline_token", com.mapbox.mapboxsdk.WellKnownTileServer.MapLibre)
+                com.mapbox.mapboxsdk.Mapbox.getTileServerOptions()?.setApiKeyRequired(false)
                 MapView(context).also { mapView ->
                     mapView.onCreate(null)
                     mapView.getMapAsync { map ->
@@ -106,7 +107,12 @@ fun LocationShareBubble(
                             .zoom(13.0)
                             .build()
 
-                        map.setStyle(Style.Builder().fromUri("asset://map_style.json")) { style ->
+                        val styleUri = if (com.bridgefy.app.map.OfflineMapManager.activeMbtilesName.value != null) {
+                            "http://127.0.0.1:8765/style.json"
+                        } else {
+                            "asset://map_style.json"
+                        }
+                        map.setStyle(Style.Builder().fromUri(styleUri)) { style ->
                             style.addSource(GeoJsonSource("mini-pin-source"))
                             style.addLayer(
                                 CircleLayer("mini-pin-layer", "mini-pin-source").withProperties(
