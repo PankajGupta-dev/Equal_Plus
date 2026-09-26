@@ -2,7 +2,7 @@
 
 BridgeFy is a decentralized, offline-first Android communication application designed to keep users connected when traditional cellular or Wi-Fi networks fail or are unavailable. It leverages peer-to-peer (P2P) mesh networking through Bluetooth Low Energy (BLE) and Wi-Fi Direct to enable text messaging, voice notes, file sharing, and location tracking entirely offline.
 
-## 🚀 Features
+##  Features:
 
 *   **Offline Mesh Networking:** Robust custom mesh architecture that dynamically routes messages across multiple hops (peers) using both BLE and Wi-Fi Direct.
 *   **Peer-to-Peer Messaging:** Send and receive secure text messages without an internet connection.
@@ -12,7 +12,7 @@ BridgeFy is a decentralized, offline-first Android communication application des
 *   **Security & Encryption:** Built-in cryptographic components for secure key management and encrypted peer-to-peer communication.
 *   **Modern UI:** A clean, responsive interface built entirely with Jetpack Compose, following Material 3 design guidelines.
 ..
-## 🛠 Tech Stack
+##  Tech Stack:
 
 *   **Language:** Kotlin
 *   **UI Framework:** Jetpack Compose (Material 3)
@@ -23,7 +23,7 @@ BridgeFy is a decentralized, offline-first Android communication application des
 *   **Location:** Google Play Services Location SDK
 *   **Concurrency:** Kotlin Coroutines
 
-## 📂 Project Structure
+##  Project Structure
 
 *   `db/`: SQLite database helpers, mappers, and queries for storing messages, peers, and network state.
 *   `media/`: Managers for voice recording and playback capabilities.
@@ -35,7 +35,7 @@ BridgeFy is a decentralized, offline-first Android communication application des
 *   `transport/`: Abstraction layers for BLE and Wi-Fi Direct connections, managing underlying connection events and data streams.
 *   `ui/`: Jetpack Compose UI layer organized by screens (`ChatScreen`, `MeshMapScreen`, `PeersScreen`, etc.), components, and viewmodels.
 
-## ⚙️ Getting Started
+##  Getting Started
 
 ### Prerequisites
 *   Android Studio (Latest stable version recommended)
@@ -51,7 +51,7 @@ BridgeFy is a decentralized, offline-first Android communication application des
 3.  Sync the project with Gradle files.
 4.  Build and run on a physical Android device. *(Note: Emulators generally do not support Wi-Fi Direct or BLE testing).*
 
-## 🔒 Permissions
+##  Permissions
 
 The app requires the following key permissions to function properly:
 *   `BLUETOOTH`, `BLUETOOTH_ADMIN`, `BLUETOOTH_ADVERTISE`, `BLUETOOTH_CONNECT`, `BLUETOOTH_SCAN`
@@ -61,11 +61,11 @@ The app requires the following key permissions to function properly:
 
 Ensure these permissions are granted upon the first launch for the mesh network to initialize correctly.
 
-## 🤝 Contributing
+##  Contributing
 
 Contributions, issues, and feature requests are welcome!
 Feel free to check the [issues page](../../issues).
 
-## 📄 License
+##  License
 
 Distributed under the MIT License. See `LICENSE` for more information.
